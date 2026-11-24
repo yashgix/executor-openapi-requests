@@ -1,0 +1,83 @@
+{
+ "exposed": [
+  {
+   "name": "ping.getPing",
+   "description": []
+  },
+  {
+   "name": "items.itemWithExtra",
+   "description": [
+    "Its path does not hold extra, so any value given is not sent."
+   ]
+  },
+  {
+   "name": "search.searchWithQueryTemplate",
+   "description": []
+  },
+  {
+   "name": "note.fragmentTemplate",
+   "description": [
+    "Its path does not hold id, so any value given is not sent."
+   ]
+  },
+  {
+   "name": "files.customVerb",
+   "description": [
+    "Its path does not hold copy, so any value given is not sent."
+   ]
+  },
+  {
+   "name": "orders.verbPrefix",
+   "description": [
+    "Its path does not hold v, so any value given is not sent."
+   ]
+  },
+  {
+   "name": "find.undeclaredQueryPlaceholder",
+   "description": []
+  },
+  {
+   "name": "itemsArchived.literalParentheses",
+   "description": [
+    "Its path does not hold extra, so any value given is not sent."
+   ]
+  },
+  {
+   "name": "odata.odataLike",
+   "description": [
+    "Its path does not hold extra, so any value given is not sent."
+   ]
+  }
+ ],
+ "refused": [
+  {
+   "path": "/jobs/:jobId",
+   "code": "operation_path",
+   "reason": "The path \"/jobs/:jobId\" declares jobId in a form that is never filled (:name, *name or a pattern such as (\\d+)). Write {name}."
+  },
+  {
+   "path": "/files/{id}/*rest",
+   "code": "operation_path",
+   "reason": "The path \"/files/{id}/*rest\" declares rest in a form that is never filled (:name, *name or a pattern such as (\\d+)). Write {name}."
+  },
+  {
+   "path": "/tags/(\\d+)/active",
+   "code": "operation_path",
+   "reason": "The path \"/tags/(\\\\d+)/active\" declares optionId in a form that is never filled (:name, *name or a pattern such as (\\d+)). Write {name}."
+  },
+  {
+   "path": "/zip/([0-9]+)/done",
+   "code": "operation_path",
+   "reason": "The path \"/zip/([0-9]+)/done\" declares zip in a form that is never filled (:name, *name or a pattern such as (\\d+)). Write {name}."
+  },
+  {
+   "path": "/reports/{report_slug}",
+   "code": "operation_path",
+   "reason": "The path uses {report_slug}, but the operation declares no path parameter named report_slug. Declared path parameters the path does not use:"
+  }
+ ],
+ "itemWithExtra": "https://example.test/items/7",
+ "customVerb": "https://example.test/files/a:copy",
+ "undeclaredQueryPlaceholder": "https://example.test/find?limit=%7Blimit%7D",
+ "search": "https://example.test/search?limit=5"
+}

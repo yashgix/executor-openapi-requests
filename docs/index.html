@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>openapi-requests: a contribution to Executor</title>
+<meta name="description" content="Two changes to Executor's OpenAPI tools: queries are sent as the spec describes, and operations that can never work are named at import. Tests, measurements and limits.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0a0a;--panel:#111113;--panel2:#161618;--line:#262628;--ink:#ededed;--muted:#a1a1a1;--faint:#6f6f73;
+  --btn:#ededed;--on-btn:#0a0a0a;--good:#7ee787;--bad:#ff8f7a;--warn:#f0c674;--mark:rgba(126,231,135,.14);--markbad:rgba(255,143,122,.16);
+  --grid:rgba(255,255,255,.045);--radius:6px;
+  --sans:"Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+  --bg:#fff;--panel:#fafafa;--panel2:#f4f4f4;--line:#eaeaea;--ink:#111;--muted:#5c5c5c;--faint:#8b8b8b;
+  --btn:#111;--on-btn:#fff;--good:#1a7f37;--bad:#c2331e;--warn:#9a6700;--mark:rgba(26,127,55,.12);--markbad:rgba(194,51,30,.12);--grid:rgba(0,0,0,.05)}}
+:root[data-theme="light"]{
+  --bg:#fff;--panel:#fafafa;--panel2:#f4f4f4;--line:#eaeaea;--ink:#111;--muted:#5c5c5c;--faint:#8b8b8b;
+  --btn:#111;--on-btn:#fff;--good:#1a7f37;--bad:#c2331e;--warn:#9a6700;--mark:rgba(26,127,55,.12);--markbad:rgba(194,51,30,.12);--grid:rgba(0,0,0,.05)}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:1.5rem}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--sans);letter-spacing:-.011em;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration-color:color-mix(in srgb,currentColor 35%,transparent);text-underline-offset:3px}
+a:hover{text-decoration-color:currentColor}
+code,.mono{font-family:var(--mono);font-size:.88em;letter-spacing:0}
+code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:.08em .36em}
+h1,h2,h3{font-weight:600;line-height:1.12;margin:0}
+h1{font-size:clamp(2rem,4.4vw,3.2rem);letter-spacing:-.035em;max-width:20ch}
+h2{font-size:1.6rem;letter-spacing:-.03em;margin-bottom:.9rem}
+h3{font-size:1.02rem;letter-spacing:-.015em;margin:1.6rem 0 .4rem}
+p{margin:.6rem 0;max-width:46rem}
+.muted{color:var(--muted)}.faint{color:var(--faint)}.small{font-size:.88rem}
+.shell{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh}
+.rail{position:sticky;top:0;height:100vh;overflow:auto;border-right:1px solid var(--line);padding:1.4rem 1.1rem;display:flex;flex-direction:column;gap:1.4rem;font-size:.92rem}
+.rail .name{font-weight:600;letter-spacing:-.02em;font-size:1.02rem}
+.rail .sub{color:var(--muted);font-size:.84rem;margin-top:.15rem}
+.tabs{display:flex;flex-direction:column;gap:.1rem}
+.tab{all:unset;cursor:pointer;padding:.38rem .6rem;border-radius:5px;color:var(--muted);border-left:2px solid transparent;display:block}
+.tab:hover{color:var(--ink)}.tab[aria-selected="true"]{color:var(--ink);border-left-color:var(--ink);background:var(--panel)}
+.tab:focus-visible,.btn:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible,.copy:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.index{display:flex;flex-direction:column;gap:.05rem;font-family:var(--mono);font-size:.78rem}
+.index a{text-decoration:none;color:var(--muted);padding:.22rem .6rem;display:flex;gap:.7rem}
+.index a:hover{color:var(--ink)}.index a span{color:var(--faint)}
+.rail .foot{margin-top:auto;display:flex;flex-direction:column;gap:.5rem;font-size:.84rem;color:var(--muted)}
+.btn{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:.4rem;border:1px solid var(--line);border-radius:999px;padding:.32rem .8rem;font-size:.84rem;color:var(--ink)}
+.btn:hover{background:var(--panel)}
+.btn.solid{background:var(--btn);color:var(--on-btn);border-color:var(--btn);font-weight:500}
+main{padding:0 clamp(1.25rem,4vw,4rem) 6rem;max-width:1000px;width:100%}
+.panel[hidden]{display:none}
+section{padding:3.2rem 0 1.2rem;border-top:1px solid var(--line)}
+section:first-child{border-top:0;padding-top:3.4rem}
+.num{font-family:var(--mono);font-size:.78rem;color:var(--faint);margin-bottom:.5rem;display:block}
+.hero{background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;margin:0 calc(-1*clamp(1.25rem,4vw,4rem));padding:4rem clamp(1.25rem,4vw,4rem) 2.4rem!important;border-top:0}
+.lede{font-size:1.14rem;color:var(--muted);max-width:40rem;margin:1.1rem 0 1.6rem}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);margin-top:2rem}
+.stats>div{padding:1rem 1.1rem;border-left:1px solid var(--line)}.stats>div:first-child{border-left:0}
+.stats b{display:block;font-size:1.9rem;letter-spacing:-.04em;font-weight:600;line-height:1.1}
+.stats span{color:var(--muted);font-size:.86rem;display:block;margin-top:.25rem}
+.chip{display:inline-block;font:500 .72rem var(--mono);border:1px solid var(--line);border-radius:999px;padding:.12rem .55rem;color:var(--muted)}
+.chip.ok{color:var(--good);border-color:color-mix(in srgb,var(--good) 40%,var(--line))}.chip.wait{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1.2rem}
+.card{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:1.1rem 1.2rem}
+.card h3{margin-top:.5rem}.card p{font-size:.94rem;color:var(--muted)}
+.demo{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);margin:1.2rem 0;overflow:hidden}
+.demo .bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.7rem 1rem;border-bottom:1px solid var(--line);background:var(--panel2);font-size:.86rem}
+.demo .body{padding:1rem}
+select,input[type=text]{font:inherit;font-size:.88rem;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:.35rem .5rem;max-width:100%}
+.rows{display:grid;gap:.6rem}
+.row{display:grid;grid-template-columns:9.5rem minmax(0,1fr);gap:.8rem;align-items:baseline;font-size:.92rem}
+.row>span:first-child{color:var(--muted);font-size:.82rem}
+.val{font-family:var(--mono);font-size:.9rem;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:.4rem .6rem;overflow-wrap:anywhere}
+.val .d{background:var(--markbad);border-radius:2px}.val.good .d{background:var(--mark)}
+.verdict{border-radius:var(--radius);padding:.8rem 1rem;border:1px solid var(--line);margin-top:.9rem;background:var(--bg)}
+.verdict b{font-family:var(--mono);font-size:.82rem}.verdict.refused b{color:var(--bad)}.verdict.kept b{color:var(--good)}
+.fields{display:grid;grid-template-columns:7rem minmax(0,1fr);gap:.5rem .7rem;align-items:center;font-size:.86rem}
+table{border-collapse:collapse;width:100%;font-size:.9rem;margin:.8rem 0}
+th,td{text-align:left;padding:.55rem .7rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 .76rem var(--mono);color:var(--muted);text-transform:none}
+.scroll{overflow-x:auto}
+figure{margin:1.2rem 0;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:1rem}
+figcaption{font-size:.84rem;color:var(--muted);margin-top:.6rem}
+svg text{font-family:var(--mono);fill:var(--ink)}svg .m{fill:var(--muted)}svg .f{fill:var(--faint)}
+pre{margin:.6rem 0;padding:.8rem 1rem;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);overflow:auto;font:.84rem/1.55 var(--mono);position:relative;letter-spacing:0}
+.copy{all:unset;cursor:pointer;position:absolute;right:.5rem;top:.5rem;font:500 .7rem var(--mono);color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:.1rem .4rem;background:var(--panel)}
+.copy:hover{color:var(--ink)}
+details{border-top:1px solid var(--line);padding:.7rem 0}details summary{cursor:pointer;font-weight:500}
+ul.tight{margin:.4rem 0;padding-left:1.1rem;max-width:46rem}ul.tight li{margin:.25rem 0}
+.topbar{display:none}
+@media (max-width:860px){
+  .shell{display:block}.rail{display:none}
+  .topbar{display:flex;position:sticky;top:0;z-index:20;gap:.6rem;align-items:center;padding:.6rem 1rem;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .topbar .name{font-weight:600;font-size:.95rem;margin-right:auto}
+  .topbar .tab{padding:.3rem .6rem;border:1px solid var(--line);border-radius:999px;border-left-width:1px;font-size:.84rem}
+  .topbar .tab[aria-selected="true"]{background:var(--btn);color:var(--on-btn);border-color:var(--btn)}
+  .stats{grid-template-columns:1fr}.stats>div{border-left:0;border-top:1px solid var(--line)}.stats>div:first-child{border-top:0}
+  .cards{grid-template-columns:1fr}.row{grid-template-columns:1fr;gap:.2rem}.fields{grid-template-columns:1fr}
+  main{padding-bottom:4rem}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="topbar" role="tablist" aria-label="Page">
+  <span class="name">openapi-requests</span>
+  <button class="tab" role="tab" data-tab="overview" aria-selected="true">Overview</button>
+  <button class="tab" role="tab" data-tab="technical" aria-selected="false">Technical</button>
+  <button class="btn" data-theme-toggle aria-label="Switch light and dark theme">Theme</button>
+</div>
+<div class="shell">
+<aside class="rail">
+  <div><div class="name">openapi-requests</div><div class="sub">A contribution to Executor</div></div>
+  <div class="tabs" role="tablist" aria-label="Page">
+    <button class="tab" role="tab" data-tab="overview" aria-selected="true">Overview</button>
+    <button class="tab" role="tab" data-tab="technical" aria-selected="false">Technical details</button>
+  </div>
+  <nav class="index" id="index" aria-label="Sections"></nav>
+  <div class="foot">
+    <button class="btn" data-theme-toggle aria-label="Switch light and dark theme">Theme: <span id="themeName">auto</span></button>
+    <a href="https://github.com/UsefulSoftwareCo/executor/pull/2590" id="link-pr2">PR #2590 on Executor</a>
+    <a href="https://github.com/UsefulSoftwareCo/executor/pull/2595" id="link-pr1">PR #2595 on Executor</a>
+    <a href="https://github.com/yashgix">GitHub: yashgix</a>
+    <a href="https://www.linkedin.com/in/yash-guptaix/">LinkedIn: Yash Gupta</a>
+  </div>
+</aside>
+<main>
+
+<!-- ============ OVERVIEW ============ -->
+<div class="panel" id="panel-overview" role="tabpanel">
+<section class="hero" id="result" data-title="Result">
+  <span class="num">01</span>
+  <h1>Executor tools send the request the spec describes.</h1>
+  <p class="lede">Executor turns OpenAPI specs into tools an agent can call. I checked what those tools actually send. Two things were wrong: the query string was rewritten on the way out, and some tools could never work.</p>
+  <div class="stats">
+    <div><b>5,198</b><span>of 22,954 operations now send a query that matches the spec</span></div>
+    <div><b>157</b><span>operations that failed on every call are now named at import</span></div>
+    <div><b>0</b><span>operations that worked are refused, in the same samples</span></div>
+  </div>
+  <p class="small faint" style="margin-top:.9rem">Offline sample of 134 apps and 68,090 generated inputs, with both changes applied together. The two changes were not measured separately. The 157 and the 0 are import-level counts, which do not depend on the query change. No live provider was called.</p>
+</section>
+
+<section id="queries" data-title="One request, two versions">
+  <span class="num">02</span>
+  <h2>One request, two versions</h2>
+  <p>Pick a query. The first line is what the spec says to send. The next two are what reached the API, recorded from a local server.</p>
+  <div class="demo">
+    <div class="bar"><label for="qcase" class="muted">Query</label><select id="qcase"></select></div>
+    <div class="body rows" id="qout"></div>
+  </div>
+  <p class="small muted">Recorded with the same tool call and the same OpenAPI document, once on upstream code and once with the change. Source: <code>reproduce/demo</code>.</p>
+</section>
+
+<section id="imports" data-title="Which operations are refused">
+  <span class="num">03</span>
+  <h2>Which operations does import refuse?</h2>
+  <p>Some operations compile into tools that can never make a valid request. The rules below are the ones in the patch, written as plain functions. They match the real compiler on every fixture in the table under the demo.</p>
+  <div class="demo">
+    <div class="bar"><label for="icase" class="muted">Example</label><select id="icase"></select></div>
+    <div class="body">
+      <div class="fields">
+        <label for="imethod">Method</label><select id="imethod"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>HEAD</option></select>
+        <label for="ipath">Path</label><input type="text" id="ipath" spellcheck="false" autocomplete="off">
+        <label for="iparams">Path parameters</label><input type="text" id="iparams" spellcheck="false" autocomplete="off" placeholder="comma separated names the operation declares">
+        <label for="ibody">Required body</label><span><input type="checkbox" id="ibody"> <span class="muted">The operation requires a request body</span></span>
+      </div>
+      <div class="verdict" id="iverdict" aria-live="polite"></div>
+      <p class="small faint" id="iagree"></p>
+    </div>
+  </div>
+</section>
+
+<section id="changes" data-title="Two changes">
+  <span class="num">04</span>
+  <h2>Two changes, kept apart</h2>
+  <div class="cards">
+    <div class="card"><span class="chip ok" id="chip-pr2">open: PR #2590</span><h3>Send the query as built</h3><p>The runtime read each query into parameters and encoded it again as a form. Commas, slashes and colons were escaped and <code>%20</code> became <code>+</code>. Now the URL goes out as built. Two scenarios and 6 files.</p></div>
+    <div class="card"><span class="chip ok" id="chip-pr1">open: PR #2595</span><h3>Report operations that can never work</h3><p>A placeholder with no parameter, a <code>:name</code> placeholder, a stray brace or a required GET body is named at import with its reason. Operations that merely declare an extra path parameter stay callable.</p></div>
+  </div>
+</section>
+
+<section id="numbers" data-title="Numbers, labelled">
+  <span class="num">05</span>
+  <h2>The numbers, and what each one covers</h2>
+  <figure>
+    <svg viewBox="0 0 720 150" role="img" aria-label="Bar of 22,954 operations: 5,198 improved, 157 named at import, 17,599 unchanged class">
+      <rect x="10" y="30" width="163" height="34" fill="var(--good)" opacity=".85"/>
+      <rect x="173" y="30" width="5" height="34" fill="var(--bad)"/>
+      <rect x="178" y="30" width="532" height="34" fill="var(--line)"/>
+      <text x="10" y="20" class="m" font-size="12">22,954 operations in two samples (134 apps)</text>
+      <text x="10" y="86" font-size="12">5,198 now match the spec</text>
+      <text x="178" y="108" font-size="12" fill="var(--bad)" style="fill:var(--bad)">157 failed every call, now named at import</text>
+      <text x="400" y="62" class="m" font-size="12">17,599 in the same class before and after</text>
+      <text x="10" y="136" class="f" font-size="11">Combined measurement, both changes together. Counted per operation, not per input profile.</text>
+    </svg>
+    <figcaption>Operations are counted once. The per-profile pair counts (5,805 and 216) overlap, so they are not added.</figcaption>
+  </figure>
+  <div class="scroll"><table>
+    <tr><th>Claim</th><th>Covers</th><th>Evidence</th></tr>
+    <tr><td>Query sent as built, scenarios pass and fail on upstream</td><td>PR 2 alone</td><td><code>app-fetch-query</code>, <code>openapi-query-styles</code></td></tr>
+    <tr><td>Import check scenario passes and fails on upstream</td><td>PR 1 alone</td><td><code>openapi-import-diagnostics</code></td></tr>
+    <tr><td>5,198 operations improved (query change)</td><td>Both together</td><td>Offline sweep, 68,090 inputs</td></tr>
+    <tr><td>157 failing operations named, 0 that worked refused (import level)</td><td>Observed in the combined sweep, independent of the query change</td><td>Offline sweep, 68,090 inputs</td></tr>
+    <tr><td>Regression gate: 0 worse of 4,792 operations</td><td>Both together</td><td>18 apps against a stored baseline</td></tr>
+  </table></div>
+</section>
+
+<section id="credit" data-title="Credit and AI">
+  <span class="num">06</span>
+  <h2>Credit, and how this was made</h2>
+  <p>Executor is by UsefulSoftwareCo and is MIT licensed. An earlier closed PR (#354) noticed the same kind of re-encoding in <code>setUrlParam</code>, and this work builds on that observation. The spec behaviour comes from OpenAPI 3.0.4, 3.1.1 and 3.2.0 and RFC 6570.</p>
+  <p>I directed the scope and review of this contribution, using Claude Code during implementation and additional AI tools for independent review. The tests, measurements and known limitations are documented here and in the repository.</p>
+  <p class="small muted">This is an independent contribution. It is not affiliated with or endorsed by the Executor team.</p>
+</section>
+
+<section id="status" data-title="Status and limits">
+  <span class="num">07</span>
+  <h2>Status and boundaries</h2>
+  <ul class="tight">
+    <li id="status-pr2"><a href="https://github.com/UsefulSoftwareCo/executor/pull/2590">PR #2590</a> (query change) is open on <code>v2</code>. Status checked 24 Nov 2026.</li>
+    <li id="status-pr1"><a href="https://github.com/UsefulSoftwareCo/executor/pull/2595">PR #2595</a> (import change) is open on <code>v2</code>. Status checked 24 Nov 2026.</li>
+    <li>The bytes are verified offline and in scenarios. No live provider was called, so provider acceptance is not covered.</li>
+    <li>Out of scope: with <code>allowReserved</code>, a literal <code>%2F</code> is still sent as <code>%252F</code>. That older behaviour belongs in its own PR.</li>
+  </ul>
+  <p class="small"><a href="#technical" data-goto="technical">Technical details</a> list every limit, the method and the commands to reproduce.</p>
+</section>
+</div>
+
+<!-- ============ TECHNICAL ============ -->
+<div class="panel" id="panel-technical" role="tabpanel" hidden>
+<section id="path" data-title="How a request is built">
+  <span class="num">01</span>
+  <h1 style="font-size:clamp(1.9rem,4vw,2.8rem)">How a tool call becomes a request</h1>
+  <p class="lede">The builder serializes each parameter by its OpenAPI style. Then the runtime sends the request through the Effect HTTP client. One step in that path rewrote the query.</p>
+  <figure>
+    <svg viewBox="0 0 760 250" role="img" aria-label="Pipeline from spec to wire: today the fromWeb step re-encodes the query, with the change it restores the original URL">
+      <g font-size="12">
+        <text x="10" y="18" class="m">Today</text>
+        <rect x="10" y="28" width="130" height="40" rx="5" fill="var(--panel2)" stroke="var(--line)"/><text x="22" y="52">spec style</text>
+        <rect x="170" y="28" width="150" height="40" rx="5" fill="var(--panel2)" stroke="var(--line)"/><text x="182" y="52">builder: a,b</text>
+        <rect x="350" y="28" width="190" height="40" rx="5" fill="var(--markbad)" stroke="var(--bad)"/><text x="362" y="52">fromWeb: query to params</text>
+        <rect x="570" y="28" width="180" height="40" rx="5" fill="var(--markbad)" stroke="var(--bad)"/><text x="582" y="52">wire: a%2Cb</text>
+        <path d="M140 48h30M320 48h30M540 48h30" stroke="var(--faint)" fill="none"/>
+        <text x="10" y="118" class="m">With the change</text>
+        <rect x="10" y="128" width="130" height="40" rx="5" fill="var(--panel2)" stroke="var(--line)"/><text x="22" y="152">spec style</text>
+        <rect x="170" y="128" width="150" height="40" rx="5" fill="var(--panel2)" stroke="var(--line)"/><text x="182" y="152">builder: a,b</text>
+        <rect x="350" y="128" width="190" height="40" rx="5" fill="var(--panel2)" stroke="var(--line)"/><text x="362" y="152">asSent: clear, restore</text>
+        <rect x="570" y="128" width="180" height="40" rx="5" fill="var(--mark)" stroke="var(--good)"/><text x="582" y="152">wire: a,b</text>
+        <path d="M140 148h30M320 148h30M540 148h30" stroke="var(--faint)" fill="none"/>
+        <text x="10" y="214" class="f" font-size="11">fromWeb still supplies method, headers, body and signal. Only the query handling changed.</text>
+      </g>
+    </svg>
+    <figcaption>The re-encoding affects OpenAPI tools and the <code>ctx.fetch</code> a tool receives. App code's global <code>fetch</code> is not affected.</figcaption>
+  </figure>
+</section>
+
+<section id="cause" data-title="Cause and fix">
+  <span class="num">02</span>
+  <h2>Cause and fix of the query change</h2>
+  <p><code>HttpClientRequest.fromWeb</code> reads a URL's query into a list of parameters, and the client appends them again with form encoding. That escapes commas, slashes and colons, and turns <code>%20</code> into <code>+</code>. The spec says a <code>form</code> list with <code>explode: false</code> is <code>tags=red,blue</code>.</p>
+  <p><code>asSent</code> keeps <code>fromWeb(request)</code> for the method, headers, body and signal, clears the parsed parameters, and sets the original URL again without its fragment. A bare trailing <code>?</code> survives. The OpenAPI builder escapes only what a URI query cannot hold. It refuses a reserved value containing <code>#</code>, which would cut the query short.</p>
+  <h3>Three controls that make the tests mean something</h3>
+  <ul class="tight">
+    <li>Real upstream code with only the new scenarios added: both query scenarios fail. The first fails on <code>tags=red%2Cblue</code> where <code>tags=red,blue</code> is expected.</li>
+    <li>Earlier fetch code that dropped the bare <code>?</code>: the <code>ctx.fetch</code> scenario fails on that case.</li>
+    <li>Keepalive: the upstream server cannot observe the flag, so the keepalive case shows that the request and its body arrive with the query as written. It does not show that the flag was forwarded.</li>
+  </ul>
+</section>
+
+<section id="rules" data-title="Import rules">
+  <span class="num">03</span>
+  <h2>What import refuses, and what it keeps</h2>
+  <div class="scroll"><table>
+    <tr><th>Case</th><th>Example</th><th>Result</th></tr>
+    <tr><td>Placeholder with no declared parameter</td><td><code>/reports/{report_slug}</code> declares <code>report_id</code></td><td>Refused, named</td></tr>
+    <tr><td>Declared parameter written as <code>:name</code>, <code>*name</code> or beside a regex group</td><td><code>/jobs/:jobId</code>, <code>/tags/(\d+)/active</code></td><td>Refused, named</td></tr>
+    <tr><td>Stray brace</td><td><code>/users/{id?}</code></td><td>Refused, named</td></tr>
+    <tr><td>Required body on GET or HEAD</td><td><code>fetch</code> cannot send one</td><td>Refused, named</td></tr>
+    <tr><td>Optional body on GET or HEAD</td><td>Empty body in the spec</td><td>Kept, body left out and named</td></tr>
+    <tr><td>Declared path parameter the path does not hold</td><td><code>/items/{id}</code> declares <code>extra</code></td><td>Kept, description says it is not sent</td></tr>
+    <tr><td>Placeholder after <code>?</code></td><td><code>/search?limit={limit}</code></td><td>Kept, sends <code>?limit=5</code></td></tr>
+    <tr><td>Literal colon or parentheses</td><td><code>/files/{id}:copy</code>, <code>/items(archived)/{id}</code></td><td>Kept</td></tr>
+  </table></div>
+</section>
+
+<section id="first" data-title="Why it refuses so little">
+  <span class="num">04</span>
+  <h2>Why the check refuses so little</h2>
+  <p>An early draft refused every operation that declares a path parameter its path does not hold. Measuring the 36 operations that rule hit in 9 stored specs showed that 25 of them sent a correct request, because the extra parameter is simply ignored. So the final check refuses only what can never work, and describes the rest in the tool description.</p>
+  <figure>
+    <svg viewBox="0 0 720 170" role="img" aria-label="The early rule hit 36 operations, 25 of which worked and 11 are invalid. The final rule refuses the 11, written as :name or *name">
+      <g font-size="12">
+        <text x="10" y="20" class="m">Early rule: 36 operations hit</text>
+        <rect x="10" y="30" width="410" height="28" fill="var(--panel2)" stroke="var(--line)"/>
+        <rect x="10" y="30" width="269" height="28" fill="var(--good)" opacity=".8"/>
+        <rect x="279" y="30" width="141" height="28" fill="var(--bad)" opacity=".85"/>
+        <text x="18" y="48" style="fill:#0a0a0a">25 worked, now kept</text><text x="287" y="48" style="fill:#0a0a0a">11 invalid</text>
+        <text x="10" y="100" class="m">Final rule: 11 refused</text>
+        <rect x="10" y="110" width="141" height="28" fill="var(--bad)" opacity=".85"/><text x="18" y="128" style="fill:#0a0a0a">11 invalid</text>
+        <text x="10" y="162" class="f" font-size="11">The 11 write the parameter as :name (nocodb) or *name (unifi), so the URL keeps the literal text.</text>
+      </g>
+    </svg>
+    <figcaption>Against real upstream, the final check refuses at most 33 operations in those 9 specs: these 11, and 22 whose path has a placeholder that no declared parameter fills. In the two samples, 7 operations the early rule would have refused are exposed and match the spec.</figcaption>
+  </figure>
+  <p>An independent review also caught that the regex-group rule refused any literal parenthesis, so <code>/items(archived)/{id}</code> with an extra parameter was wrongly refused. The rule now needs a backslash or a group such as <code>([0-9]+)</code>, and the scenario covers it.</p>
+</section>
+
+<section id="evidence" data-title="Evidence">
+  <span class="num">05</span>
+  <h2>How each claim is backed</h2>
+  <div class="scroll"><table>
+    <tr><th>Claim</th><th>Backed by</th><th>Command or file</th></tr>
+    <tr><td>The query reaches the API as built</td><td>Scenario <code>openapi-query-styles</code>, controls above</td><td><code>bun run e2e:self-host --test-name "Imported OpenAPI query parameters reach the upstream..."</code></td></tr>
+    <tr><td><code>ctx.fetch</code> keeps the query and a bare <code>?</code>, and delivers a keepalive POST and a streamed POST with the query as written</td><td>Scenario <code>app-fetch-query</code>. The upstream server cannot observe the keepalive flag, so that case shows the request and body arrive</td><td><code>tests/app-fetch-query.spec.ts</code></td></tr>
+    <tr><td>Import names the right operations and keeps the rest</td><td>Scenario <code>openapi-import-diagnostics</code></td><td><code>tests/openapi-import-diagnostics.spec.ts</code></td></tr>
+    <tr><td>This page's rules match the compiler</td><td>15 checks against recorded compiler output</td><td><code>node --test tests/rules-port.test.mjs</code></td></tr>
+    <tr><td>Nothing that worked is refused, nothing got worse</td><td>Offline sweep and gate</td><td><code>reproduce/README.md</code>, <code>data/results.json</code></td></tr>
+  </table></div>
+</section>
+
+<section id="checks" data-title="Checks by commit">
+  <span class="num">06</span>
+  <h2>Which checks ran on which commit</h2>
+  <p>Final commits are the ones to be submitted: <code>d5733f56b</code> for the query change (PR #2590) and <code>2c8de9c7e</code> for the import change (PR #2595). The import commit has the same tree as the earlier <code>534287040</code>, where its checks ran. Only its message changed.</p>
+  <div class="scroll"><table>
+    <tr><th>Check</th><th>Query change (final)</th><th>Import change</th></tr>
+    <tr><td>End-to-end scenarios pass, and fail on real upstream</td><td>final commit</td><td>final tree</td></tr>
+    <tr><td>Format, lint, typecheck, <code>e2e:check</code></td><td>final commit (<code>bun run check</code>, 17 of 17)</td><td>final tree (changed files, 9 projects, <code>e2e:check</code>)</td></tr>
+    <tr><td>Regression gate, 18 apps, 4,792 operations</td><td colspan="2">not run for either change alone. Run on both together, with the final import code and the query change: nothing worse</td></tr>
+    <tr><td>Release-note check, <code>e2e:check-description</code></td><td>final commit</td><td>earlier revision, same four files</td></tr>
+    <tr><td>Sweep of 68,090 inputs</td><td colspan="2">both changes together, on an earlier revision of the import change that differs only in a regex-group rule narrowed afterwards</td></tr>
+    <tr><td><code>apps-version</code>, <code>pr:check</code> as a whole</td><td colspan="2">not run, because <code>v2</code> and <code>main</code> share no history</td></tr>
+  </table></div>
+</section>
+
+<section id="method" data-title="Method">
+  <span class="num">07</span>
+  <h2>How the numbers were measured</h2>
+  <ul class="tight">
+    <li>For each operation of each sampled spec, an input is generated from the tool's own schema in three profiles (plain, required fields only, reserved characters). The request is captured by a fetch that never reaches a network.</li>
+    <li>The captured request is compared with the OpenAPI serialization rules by a separate checker, not with the old behaviour. Results are <code>match</code>, <code>encoding</code>, <code>unsure</code> or <code>wrong</code>.</li>
+    <li>The same sweep runs on upstream <code>v2</code> and on the tree with both changes. Pair counts are per operation and profile. The page's headline counts operations.</li>
+    <li>A regression gate stores one verdict per operation for 18 apps (4,792 operations) and fails on anything worse.</li>
+    <li>Both changes were applied together for the sweep. They were not measured separately.</li>
+  </ul>
+</section>
+
+<section id="limits" data-title="Limits">
+  <span class="num">08</span>
+  <h2>Limits</h2>
+  <ul class="tight">
+    <li>An undeclared placeholder after <code>?</code> (<code>/find?limit={limit}</code> with no <code>limit</code> declared) is not diagnosed and is sent as <code>limit=%7Blimit%7D</code>. A query may also hold literal braces.</li>
+    <li><code>/jobs/:jobId.json</code> declaring <code>jobId</code>, and <code>/jobs/:id</code> declaring <code>jobId</code>, are kept and send the colon segment as written.</li>
+    <li>A kept unused path parameter stays required in the tool input, so an agent must give it a value that is then dropped.</li>
+    <li>With <code>allowReserved</code>, a literal <code>%2F</code> is still sent as <code>%252F</code>. The cause is in <code>swagger-client</code> and it predates this work.</li>
+    <li>The keepalive scenario shows the request and body arrive, not that the flag is forwarded, because the upstream server cannot observe it. No live provider was called. Nested serialization and binary or multipart bodies are not covered.</li>
+    <li><code>pr:check</code> cannot run as a whole because <code>v2</code> and <code>main</code> share no history. Its parts were run for the query change, and for an earlier revision of the import change. The apps-version step was not run.</li>
+  </ul>
+</section>
+
+<section id="reproduce" data-title="Reproduce">
+  <span class="num">09</span>
+  <h2>Reproduce</h2>
+  <p>You need Git, Bun, Docker (for the self-host scenarios) and Node 22 or later. <code>PORTFOLIO</code> is the folder that holds this page's <code>README.md</code> and <code>patches/</code>. <code>EXECUTOR</code> is a fresh clone of <a href="https://github.com/UsefulSoftwareCo/executor">UsefulSoftwareCo/executor</a>.</p>
+  <h3>1. Get Executor at the base commit and apply both patches</h3>
+  <pre><button class="copy" data-copy>copy</button>export PORTFOLIO="$PWD"
+export EXECUTOR="$HOME/executor"
+git clone https://github.com/UsefulSoftwareCo/executor "$EXECUTOR"
+cd "$EXECUTOR"
+git checkout 45e39ee12
+git am --3way "$PORTFOLIO/patches/pr2-query-as-sent.patch" "$PORTFOLIO/patches/pr1-import-diagnostics.patch"</pre>
+  <p class="small muted">Both patches are against <code>v2</code> at <code>45e39ee12</code>. <code>git am</code> needs <code>user.name</code> and <code>user.email</code> set. Applying only one patch works too.</p>
+  <h3>2. Run the scenarios, from <code>$EXECUTOR</code></h3>
+  <pre><button class="copy" data-copy>copy</button>bun install
+bun run e2e:self-host --test-name "An app's fetch sends its query to the upstream exactly as written"
+bun run e2e:self-host --test-name "Imported OpenAPI query parameters reach the upstream as OpenAPI serializes each style"
+bun run e2e:self-host --test-name "OpenAPI import reports a misnamed path parameter"</pre>
+  <p class="small muted">To see a control fail, check out <code>45e39ee12</code> again, copy only the three files from <code>$PORTFOLIO/tests/</code> into <code>e2e/tests/</code>, add their entries to <code>e2e/test-plan.ts</code> from the patches, and run the same commands.</p>
+  <h3>3. The page's import rules, from <code>$PORTFOLIO</code></h3>
+  <pre><button class="copy" data-copy>copy</button>cd "$PORTFOLIO"
+node --test tests/rules-port.test.mjs</pre>
+  <p class="small muted">The measurement harness and the offline demo are in <code>reproduce/</code>. The public spec files they read are not bundled. <code>reproduce/README.md</code> says where to put them.</p>
+</section>
+</div>
+
+</main>
+</div>
+<script src="rules.js"></script>
+<script>
+(function(){
+  // ---- tabs ----
+  var tabs=document.querySelectorAll('[data-tab]'),panels={overview:document.getElementById('panel-overview'),technical:document.getElementById('panel-technical')};
+  function indexFor(name){
+    var nav=document.getElementById('index');nav.innerHTML='';
+    panels[name].querySelectorAll('section').forEach(function(s){
+      var a=document.createElement('a');a.href='#'+s.id;
+      a.innerHTML='<span>'+s.querySelector('.num').textContent+'</span>'+s.dataset.title;nav.appendChild(a)});
+  }
+  function show(name,hash){
+    if(!panels[name])name='overview';
+    for(var k in panels)panels[k].hidden=(k!==name);
+    tabs.forEach(function(t){t.setAttribute('aria-selected',String(t.dataset.tab===name))});
+    indexFor(name);
+    try{history.replaceState(null,'','#'+(hash||name))}catch(e){}
+    window.scrollTo(0,0);
+  }
+  tabs.forEach(function(t){t.addEventListener('click',function(){show(t.dataset.tab)})});
+  document.querySelectorAll('[data-goto]').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();show(a.dataset.goto)})});
+  var h=(location.hash||'').slice(1);
+  var start=(h==='technical'||document.querySelector('#panel-technical #'+(h||'x')))?'technical':'overview';
+  show(start,h||start);
+  if(h&&document.getElementById(h)&&document.getElementById(h).tagName==='SECTION')document.getElementById(h).scrollIntoView();
+
+  // ---- theme ----
+  var root=document.documentElement,names=['auto','dark','light'],cur='auto';
+  try{cur=localStorage.getItem('theme')||'auto'}catch(e){}
+  var qt=(location.search.match(/[?&]theme=(light|dark)/)||[])[1];if(qt)cur=qt;
+  function applyTheme(){if(cur==='auto')root.removeAttribute('data-theme');else root.setAttribute('data-theme',cur);var n=document.getElementById('themeName');if(n)n.textContent=cur}
+  applyTheme();
+  document.querySelectorAll('[data-theme-toggle]').forEach(function(b){b.addEventListener('click',function(){cur=names[(names.indexOf(cur)+1)%3];try{localStorage.setItem('theme',cur)}catch(e){}applyTheme()})});
+
+  // ---- query demo (recorded outputs) ----
+  var Q=[
+    {label:'Comma-separated list',built:'?tags=red,blue',before:'?tags=red%2Cblue',after:'?tags=red,blue'},
+    {label:'Space in a value',built:'?q=two%20words',before:'?q=two+words',after:'?q=two%20words'},
+    {label:'Reserved characters in a value',built:'?path=a/b:c',before:'?path=a%2Fb%3Ac',after:'?path=a/b:c'},
+    {label:'Pipe-delimited list (was already right)',built:'?pipes=a%7Cb',before:'?pipes=a%7Cb',after:'?pipes=a%7Cb'}];
+  var sel=document.getElementById('qcase');Q.forEach(function(q,i){var o=document.createElement('option');o.value=i;o.textContent=q.label;sel.appendChild(o)});
+  function esc(s){return s.replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+  function mark(s,ref){var i=0;while(i<s.length&&i<ref.length&&s[i]===ref[i])i++;var j=0;while(j<s.length-i&&j<ref.length-i&&s[s.length-1-j]===ref[ref.length-1-j])j++;
+    return esc(s.slice(0,i))+(s.length-i-j>0?'<span class="d">'+esc(s.slice(i,s.length-j))+'</span>':'')+esc(s.slice(s.length-j))}
+  function drawQ(){var q=Q[+sel.value],o=document.getElementById('qout');
+    o.innerHTML='<div class="row"><span>The spec says</span><div class="val">'+esc(q.built)+'</div></div>'+
+    '<div class="row"><span>Upstream sends</span><div class="val">'+mark(q.before,q.built)+'</div></div>'+
+    '<div class="row"><span>With the change</span><div class="val good">'+mark(q.after,q.built)+'</div></div>'+
+    '<div class="row"><span></span><span class="small '+(q.before===q.built?'muted':'')+'">'+(q.before===q.built?'No difference for this case.':'Highlighted: what upstream changed on the way out.')+'</span></div>'}
+  sel.addEventListener('change',drawQ);drawQ();
+
+  // ---- import demo ----
+  var X=[
+    {label:'Extra declared path parameter',method:'GET',path:'/items/{id}',params:'id, extra',op:'items.itemWithExtra'},
+    {label:'Colon placeholder',method:'GET',path:'/jobs/:jobId',params:'jobId',refusedPath:'/jobs/:jobId'},
+    {label:'Star placeholder',method:'GET',path:'/files/{id}/*rest',params:'id, rest',refusedPath:'/files/{id}/*rest'},
+    {label:'Regex group where a parameter was meant',method:'POST',path:'/tags/(\\d+)/active',params:'optionId',refusedPath:'/tags/(\\d+)/active'},
+    {label:'Misnamed placeholder',method:'GET',path:'/reports/{report_slug}',params:'report_id',refusedPath:'/reports/{report_slug}'},
+    {label:'Placeholder after ?',method:'GET',path:'/search?limit={limit}',params:'limit',op:'search.searchWithQueryTemplate'},
+    {label:'Literal parentheses in a segment',method:'GET',path:'/items(archived)/{id}',params:'id, extra',op:'itemsArchived.literalParentheses'},
+    {label:'Custom verb after a placeholder',method:'POST',path:'/files/{fileId}:copy',params:'fileId, copy',op:'files.customVerb'},
+    {label:'Stray brace',method:'GET',path:'/users/{id?}',params:''},
+    {label:'Required body on GET',method:'GET',path:'/export',params:'',body:true}];
+  var isel=document.getElementById('icase');X.forEach(function(x,i){var o=document.createElement('option');o.value=i;o.textContent=x.label;isel.appendChild(o)});
+  var im=document.getElementById('imethod'),ip=document.getElementById('ipath'),ipa=document.getElementById('iparams'),ib=document.getElementById('ibody'),iv=document.getElementById('iverdict'),ia=document.getElementById('iagree');
+  var rec=null;fetch('compiler-fixtures.recorded.json').then(function(r){return r.ok?r.json():null}).then(function(j){rec=j;run()}).catch(function(){});
+  function run(){
+    var params=ipa.value.split(',').map(function(s){return s.trim()}).filter(Boolean);
+    var r=importRules.check({method:im.value,path:ip.value,params:params,bodyRequired:ib.checked});
+    iv.className='verdict '+r.verdict;
+    iv.innerHTML=r.verdict==='refused'?'<b>refused ('+r.code+')</b><div>'+esc(r.reason)+'</div><div class="small muted">The operation is left out of the tool list with this reason.</div>':
+      '<b>kept</b><div>'+(r.note?esc(r.note):'The tool is exposed as written.')+'</div>';
+    var x=X[+isel.value],agree='';
+    if(x&&rec&&x.path===ip.value&&x.method===im.value&&!ib.checked){
+      var exposed=rec.exposed.some(function(e){return e.name===x.op}),refused=rec.refused.some(function(e){return e.path===x.refusedPath});
+      if(x.op&&exposed)agree='The real compiler kept this operation on the same fixture.';
+      if(x.refusedPath&&refused)agree='The real compiler refused this operation on the same fixture.';
+    }
+    ia.textContent=agree;
+  }
+  function load(){var x=X[+isel.value];im.value=x.method;ip.value=x.path;ipa.value=x.params;ib.checked=!!x.body;run()}
+  isel.addEventListener('change',load);[im,ip,ipa,ib].forEach(function(e){e.addEventListener('input',run);e.addEventListener('change',run)});load();
+
+  // ---- PR links: docs/links.json is the one place to set the real PR URLs ----
+  fetch('links.json').then(function(r){return r.ok?r.json():null}).then(function(L){
+    if(!L)return;
+    [['pr1','chip-pr1','link-pr1','status-pr1','import change'],['pr2','chip-pr2','link-pr2','status-pr2','query change']].forEach(function(k){
+      var d=L[k[0]];if(!d||!d.url)return;
+      var chip=document.getElementById(k[1]),a=document.getElementById(k[2]),st=document.getElementById(k[3]);
+      if(chip){chip.textContent=d.state+': PR #'+d.number;chip.className='chip '+(d.state==='merged'?'ok':d.state==='open'?'ok':'wait')}
+      if(a){a.href=d.url;a.textContent='PR #'+d.number+' on Executor';a.hidden=false}
+      if(st)st.innerHTML='<a href="'+d.url+'">PR #'+d.number+'</a> ('+k[4]+') is '+d.state+' on <code>v2</code>. Status checked '+d.checked+'.';
+    });
+  }).catch(function(){});
+
+  // ---- copy buttons ----
+  document.querySelectorAll('[data-copy]').forEach(function(b){b.addEventListener('click',function(){
+    var t=b.parentElement.textContent.replace(/^copy/,'').trim();
+    try{navigator.clipboard.writeText(t).then(function(){b.textContent='copied';setTimeout(function(){b.textContent='copy'},1200)})}catch(e){}})});
+})();
+</script>
+</body>
+</html>

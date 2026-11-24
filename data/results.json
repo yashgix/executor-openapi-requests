@@ -1,0 +1,110 @@
+{
+  "checkedAgainst": {
+    "repo": "UsefulSoftwareCo/executor",
+    "branch": "v2",
+    "commit": "45e39ee12",
+    "date": "2026-11-24"
+  },
+  "pr2": {
+    "title": "Send OpenAPI and ctx.fetch queries exactly as built",
+    "url": "https://github.com/UsefulSoftwareCo/executor/pull/2590",
+    "number": 2590,
+    "commit": "d5733f56b",
+    "status": "open on 24 Nov 2026, no checks, comments or reviews yet",
+    "files": 6,
+    "added": 400,
+    "removed": 5,
+    "checked": "2026-11-24"
+  },
+  "pr1": {
+    "title": "Report unsendable OpenAPI operations during import",
+    "commit": "2c8de9c7e",
+    "status": "open on 24 Nov 2026, no checks, comments or reviews yet",
+    "files": 4,
+    "url": "https://github.com/UsefulSoftwareCo/executor/pull/2595",
+    "number": 2595,
+    "sameTreeAs": "534287040"
+  },
+  "scenarios": {
+    "importDiagnostics": {
+      "commit": "534287040",
+      "result": "pass",
+      "realUpstreamControl": "fails at the first refused operation"
+    },
+    "queryStyles": {
+      "commit": "d5733f56b",
+      "result": "pass",
+      "realUpstreamControl": "fails on tags=red%2Cblue"
+    },
+    "appFetchQuery": {
+      "commit": "d5733f56b",
+      "result": "pass",
+      "earlierFetchCodeControl": "fails on the bare ?"
+    }
+  },
+  "combinedMeasurement": {
+    "label": "Both changes applied together. The two were not measured separately.",
+    "apps": 134,
+    "operations": 22954,
+    "inputs": 68090,
+    "operationsImproved": 5198,
+    "pairs": {
+      "lossyNowMatch": 5805,
+      "wrongNowMatch": 216,
+      "note": "Pairs of (operation, input profile). The 216 operations of the second group are also in the first, in another profile, so do not add them."
+    },
+    "alwaysFailedNowNamed": 157,
+    "workedNowRefused": 0,
+    "worseAmongStillExposed": 0,
+    "bytesChangedStillEquivalent": 6,
+    "importLevelNote": "Import-level results (157 operations named at import, 0 operations that worked refused) were observed in the combined run. They were not measured for either change alone. Which operations import exposes does not depend on the query-encoding change, so they describe the import change's behaviour. The query-encoding counts (5,198 operations improved) belong to the combined run only."
+  },
+  "audit9Specs": {
+    "refusedAgainstV2": 33,
+    "undeclaredPlaceholder": 22,
+    "colonOrStarName": 11,
+    "firstVersionRefused": 36,
+    "firstVersionKeptNow": 25
+  },
+  "sampledSeven": {
+    "refusedByFirstVersion": 7,
+    "exposedAndMatchNow": 7
+  },
+  "gate": {
+    "apps": 18,
+    "operations": 4792,
+    "worseWithChange": 0,
+    "worseOnUpstreamAgainstBaseline": 1308,
+    "baselineNote": "Baseline is a stored verdict per operation. The upstream figure is from an earlier upstream commit, 3dd7f2f52.",
+    "scope": "Both changes together: the tree held the final import code and the query change. Not run for either change alone."
+  },
+  "limits": [
+    "An undeclared placeholder after ? in an operation path is not diagnosed and is sent as limit=%7Blimit%7D.",
+    "`:jobId.json` and `/jobs/:id` declaring `jobId` are kept and send the colon segment as written.",
+    "A kept unused path parameter stays required in the tool input.",
+    "The keepalive scenario shows the request and body arrive. The upstream server cannot observe the keepalive flag, so forwarding of the flag is not verified.",
+    "With allowReserved, a literal %2F is still sent as %252F. Older behaviour, not changed.",
+    "No live provider was called. Bytes are verified, provider acceptance is not."
+  ],
+  "verificationByCommit": {
+    "pr2": {
+      "commit": "d5733f56b",
+      "scenarios": "final",
+      "bunRunCheck": "final, 17 of 17",
+      "releaseNoteAndDescriptionCheck": "final"
+    },
+    "pr1": {
+      "commit": "2c8de9c7e",
+      "tree": "same as 534287040",
+      "scenarios": "final tree",
+      "formatLintTypecheck": "final tree",
+      "gate": "not run alone; run on both changes together (final import code with the query change)",
+      "releaseNoteAndDescriptionCheck": "earlier revision, same four files"
+    },
+    "sweep": "both changes together, earlier revision of the import change (c8cf6a59f), before the regex-group rule was narrowed",
+    "notRun": [
+      "apps-version",
+      "pr:check as a whole"
+    ]
+  }
+}

@@ -1,5 +1,7 @@
 # openapi-requests
 
+**Live page:** https://yashgix.github.io/executor-openapi-requests/ · **Pull requests:** [#2590](https://github.com/UsefulSoftwareCo/executor/pull/2590) and [#2595](https://github.com/UsefulSoftwareCo/executor/pull/2595)
+
 Two changes to [Executor](https://github.com/UsefulSoftwareCo/executor) so its OpenAPI tools send the request the spec describes, with the tests, measurements and limits for each.
 
 Executor turns OpenAPI specs into tools an agent can call. Checking what those tools send showed two problems. The query string was rewritten on the way out (`tags=red,blue` went out as `tags=red%2Cblue`, `a%20b` as `a+b`). And some operations compiled into tools that could never work, such as a path with `{report_slug}` whose operation declares `report_id`.

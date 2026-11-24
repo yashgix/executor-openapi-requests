@@ -54,9 +54,6 @@ Which checks ran on which commit:
 
 The 68,090-input sweep ran on both changes together, on an earlier revision of the import change that differs only in a regex-group rule narrowed afterwards. `apps-version` and `pr:check` as a whole were not run, because `v2` and `main` share no history. The scenarios ran once, in a container.
 
-## How AI was used
-I directed the scope and review of this contribution, using Claude Code during implementation and additional AI tools for independent review. The tests, measurements and known limitations are documented here.
-
 ## Author
 Yash Gupta · [GitHub](https://github.com/yashgix) · [LinkedIn](https://www.linkedin.com/in/yash-guptaix/)
 

@@ -1,6 +1,6 @@
 # Architecture: how an OpenAPI tool call becomes a request
 
-Executor imports an OpenAPI document and compiles each operation into a tool. At call time it serializes the tool's input into a request and sends it. This note covers the two places the change touches. Paths are in `UsefulSoftwareCo/executor` at `v2` `45e39ee12`.
+Executor imports an OpenAPI document and compiles each operation into a tool. At call time it serializes the tool's input into a request and sends it. This note covers the two places the change touches. Paths are in `UsefulSoftwareCo/executor` at `v2`. The code described is the same at `45e39ee12`, where the benchmark ran, and at `7cabe226e`, where the patches now apply.
 
 ## 1. Import: `packages/apps/src/implementation/openapi-compile.ts`
 

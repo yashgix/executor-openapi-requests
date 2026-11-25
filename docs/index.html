@@ -323,15 +323,15 @@ ul.tight{margin:.4rem 0;padding-left:1.1rem;max-width:46rem}ul.tight li{margin:.
 <section id="checks" data-title="Checks by commit">
   <span class="num">06</span>
   <h2>Which checks ran on which commit</h2>
-  <p>Final commits are the ones to be submitted: <code>d5733f56b</code> for the query change (PR #2590) and <code>2c8de9c7e</code> for the import change (PR #2595). The import commit has the same tree as the earlier <code>534287040</code>, where its checks ran. Only its message changed.</p>
+  <p>Both changes were rebased on 25 Nov 2026 onto <code>v2</code> <code>7cabe226e</code>. The current commits are <code>580514465</code> for the query change (PR #2590) and <code>af5d3a9bb</code> for the import change (PR #2595). The rebase resolved two small conflicts with upstream's comment removals and dropped the prose comments that upstream's new lint rule forbids. The code is otherwise the same as the originals, <code>d5733f56b</code> and <code>2c8de9c7e</code>, which were built on <code>45e39ee12</code>.</p>
   <div class="scroll"><table>
-    <tr><th>Check</th><th>Query change (final)</th><th>Import change</th></tr>
-    <tr><td>End-to-end scenarios pass, and fail on real upstream</td><td>final commit</td><td>final tree</td></tr>
-    <tr><td>Format, lint, typecheck, <code>e2e:check</code></td><td>final commit (<code>bun run check</code>, 17 of 17)</td><td>final tree (changed files, 9 projects, <code>e2e:check</code>)</td></tr>
-    <tr><td>Regression gate, 18 apps, 4,792 operations</td><td colspan="2">not run for either change alone. Run on both together, with the final import code and the query change: nothing worse</td></tr>
-    <tr><td>Release-note check, <code>e2e:check-description</code></td><td>final commit</td><td>earlier revision, same four files</td></tr>
-    <tr><td>Sweep of 68,090 inputs</td><td colspan="2">both changes together, on an earlier revision of the import change that differs only in a regex-group rule narrowed afterwards</td></tr>
-    <tr><td><code>apps-version</code>, <code>pr:check</code> as a whole</td><td colspan="2">not run, because <code>v2</code> and <code>main</code> share no history</td></tr>
+    <tr><th>Check</th><th>Ran on</th></tr>
+    <tr><td>End-to-end scenarios pass, and fail on current upstream</td><td>the rebased commits, singly and together</td></tr>
+    <tr><td>Format, lint, typecheck, <code>e2e:check</code>, <code>bun run check</code> (18 of 18)</td><td>the rebased commits, singly and together</td></tr>
+    <tr><td>Regression gate, 18 apps, 4,792 operations</td><td>the original commits, both together. Not run for either change alone and not rerun after the rebase</td></tr>
+    <tr><td>Sweep of 68,090 inputs and the 9-spec count</td><td>the original commits, both together, on an earlier revision of the import change. Not rerun</td></tr>
+    <tr><td>Release-note check, <code>e2e:check-description</code></td><td>the original query commit, and an earlier revision of the import change. Not rerun</td></tr>
+    <tr><td><code>apps-version</code>, <code>pr:check</code> as a whole</td><td>not run, because <code>v2</code> and <code>main</code> share no history</td></tr>
   </table></div>
 </section>
 
@@ -341,7 +341,7 @@ ul.tight{margin:.4rem 0;padding-left:1.1rem;max-width:46rem}ul.tight li{margin:.
   <ul class="tight">
     <li>For each operation of each sampled spec, an input is generated from the tool's own schema in three profiles (plain, required fields only, reserved characters). The request is captured by a fetch that never reaches a network.</li>
     <li>The captured request is compared with the OpenAPI serialization rules by a separate checker, not with the old behaviour. Results are <code>match</code>, <code>encoding</code>, <code>unsure</code> or <code>wrong</code>.</li>
-    <li>The same sweep runs on upstream <code>v2</code> and on the tree with both changes. Pair counts are per operation and profile. The page's headline counts operations.</li>
+    <li>The same sweep runs on upstream <code>v2</code> (at <code>45e39ee12</code>) and on the tree with both changes. Pair counts are per operation and profile. The page's headline counts operations.</li>
     <li>A regression gate stores one verdict per operation for 18 apps (4,792 operations) and fails on anything worse.</li>
     <li>Both changes were applied together for the sweep. They were not measured separately.</li>
   </ul>
@@ -369,15 +369,15 @@ ul.tight{margin:.4rem 0;padding-left:1.1rem;max-width:46rem}ul.tight li{margin:.
 export EXECUTOR="$HOME/executor"
 git clone https://github.com/UsefulSoftwareCo/executor "$EXECUTOR"
 cd "$EXECUTOR"
-git checkout 45e39ee12
+git checkout 7cabe226e
 git am --3way "$PORTFOLIO/patches/pr2-query-as-sent.patch" "$PORTFOLIO/patches/pr1-import-diagnostics.patch"</pre>
-  <p class="small muted">Both patches are against <code>v2</code> at <code>45e39ee12</code>. <code>git am</code> needs <code>user.name</code> and <code>user.email</code> set. Applying only one patch works too.</p>
+  <p class="small muted">Both patches are against <code>v2</code> at <code>7cabe226e</code>. The originals, against <code>45e39ee12</code>, are in <code>patches/original-45e39ee12/</code>. The benchmark ran on those. <code>git am</code> needs <code>user.name</code> and <code>user.email</code> set. Applying only one patch works too.</p>
   <h3>2. Run the scenarios, from <code>$EXECUTOR</code></h3>
   <pre><button class="copy" data-copy>copy</button>bun install
 bun run e2e:self-host --test-name "An app's fetch sends its query to the upstream exactly as written"
 bun run e2e:self-host --test-name "Imported OpenAPI query parameters reach the upstream as OpenAPI serializes each style"
 bun run e2e:self-host --test-name "OpenAPI import reports a misnamed path parameter"</pre>
-  <p class="small muted">To see a control fail, check out <code>45e39ee12</code> again, copy only the three files from <code>$PORTFOLIO/tests/</code> into <code>e2e/tests/</code>, add their entries to <code>e2e/test-plan.ts</code> from the patches, and run the same commands.</p>
+  <p class="small muted">To see a control fail, check out <code>7cabe226e</code> again, copy only the three files from <code>$PORTFOLIO/tests/</code> into <code>e2e/tests/</code>, add their entries to <code>e2e/test-plan.ts</code> from the patches, and run the same commands.</p>
   <h3>3. The page's import rules, from <code>$PORTFOLIO</code></h3>
   <pre><button class="copy" data-copy>copy</button>cd "$PORTFOLIO"
 node --test tests/rules-port.test.mjs</pre>

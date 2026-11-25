@@ -1,4 +1,3 @@
-/** Query parameter styles reach the upstream as OpenAPI serializes them, through the real Worker. */
 import { expect, layer } from "@effect/vitest";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { Effect, Layer, Schema } from "effect";
@@ -60,7 +59,6 @@ const document = {
   },
 };
 
-// The query string OpenAPI 3.2 gives for each input (URL Percent-Encoding and Style Examples).
 const cases = [
   [{ tags: ["red", "blue"] }, "tags=red,blue"],
   [{ tags: ["red,blue", "green"] }, "tags=red%2Cblue,green"],
@@ -154,8 +152,6 @@ layer(HostedLive, { excludeTestServices: true })("OpenAPI query styles", (it) =>
         }
         yield* evidence.json("received-queries.json", received);
         expect(received).toEqual(cases.map(([, wire]) => wire));
-        // A raw `#` in an allowReserved value would end the query; the call is refused unsent,
-        // including a trailing `#`, whose fragment is empty.
         for (const value of ["x#y", "x#", "#"]) {
           const refused = yield* api.request(actors.owner, "POST", `${path}/tools/call`, {
             tool: "items.listItems",

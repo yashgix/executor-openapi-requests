@@ -1,4 +1,4 @@
-From 2c8de9c7ec4d5cd52942e8b990d608b0f7d6b51c Mon Sep 17 00:00:00 2001
+From af5d3a9bbf1234be223e714cc240a980cde86ed3 Mon Sep 17 00:00:00 2001
 From: yashgix <125082291+yashgix@users.noreply.github.com>
 Date: Mon, 23 Nov 2026 23:05:04 -0500
 Subject: [PATCH] Report unsendable OpenAPI operations during import
@@ -9,9 +9,9 @@ Release-note: Fix: OpenAPI imports now explain which operations cannot be called
 ---
  .changeset/openapi-import-diagnostics.md      |   8 +
  e2e/test-plan.ts                              |  11 +
- e2e/tests/openapi-import-diagnostics.spec.ts  | 473 ++++++++++++++++++
- .../src/implementation/openapi-compile.ts     |  87 +++-
- 4 files changed, 577 insertions(+), 2 deletions(-)
+ e2e/tests/openapi-import-diagnostics.spec.ts  | 462 ++++++++++++++++++
+ .../src/implementation/openapi-compile.ts     |  79 ++-
+ 4 files changed, 558 insertions(+), 2 deletions(-)
  create mode 100644 .changeset/openapi-import-diagnostics.md
  create mode 100644 e2e/tests/openapi-import-diagnostics.spec.ts
 
@@ -30,10 +30,10 @@ index 000000000..17c287155
 +template, and a required GET or HEAD body. An optional GET or HEAD body is left out of the tool
 +input and named in its description, and so is a declared path parameter the path does not hold.
 diff --git a/e2e/test-plan.ts b/e2e/test-plan.ts
-index c903c8d7f..d111eb834 100644
+index 27a753b49..252e2dba3 100644
 --- a/e2e/test-plan.ts
 +++ b/e2e/test-plan.ts
-@@ -3190,6 +3190,17 @@ export const scenarios = plan({
+@@ -3106,6 +3106,17 @@ export const scenarios = plan({
        cloud: na("Cloud runs the same step from its Worker's cron in the Cloud scenario."),
      },
    },
@@ -53,11 +53,10 @@ index c903c8d7f..d111eb834 100644
      file: "app-package-metadata.spec.ts",
 diff --git a/e2e/tests/openapi-import-diagnostics.spec.ts b/e2e/tests/openapi-import-diagnostics.spec.ts
 new file mode 100644
-index 000000000..bdcf65da9
+index 000000000..9126f969e
 --- /dev/null
 +++ b/e2e/tests/openapi-import-diagnostics.spec.ts
-@@ -0,0 +1,473 @@
-+/** Import diagnostics: missing path parameters and GET/HEAD bodies are reported or handled. */
+@@ -0,0 +1,462 @@
 +import { expect, layer } from "@effect/vitest";
 +import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 +import { Effect, Layer, Schema } from "effect";
@@ -408,8 +407,6 @@ index 000000000..bdcf65da9
 +          collect(toolsResponse.body).find(
 +            (entry) => entry.name === name && "inputSchema" in entry,
 +          );
-+        // The tool's own input fields: the `input` object each account's branch of the schema wraps. A missing
-+        // branch fails here, so an absent field is never read from an absent schema.
 +        const inputFields = (name: string) => {
 +          const inputs = collect(listed(name)?.inputSchema).flatMap((entry) => {
 +            const input = (entry.properties as Record<string, unknown> | undefined)?.input;
@@ -424,7 +421,6 @@ index 000000000..bdcf65da9
 +            ).toBe(true);
 +          return fields.flatMap((branch) => Object.keys(branch ?? {}));
 +        };
-+        // A left-out operation is not listed; reading it by name reports why, for that operation alone.
 +        const leftOut = (name: string) =>
 +          Effect.gen(function* () {
 +            const read = yield* api.request(actors.owner, "GET", `${path}/tools/${name}`);
@@ -439,29 +435,24 @@ index 000000000..bdcf65da9
 +          "The path uses {report_slug}, but the operation declares no path parameter named report_slug. Declared path parameters the path does not use: report_id.",
 +        );
 +
-+        // A declared path parameter the path does not hold is ignored: the tool stays callable and says so.
 +        expect(listed("items.itemWithExtra"), report).toBeDefined();
 +        expect(String(listed("items.itemWithExtra")?.description ?? "")).toContain(
 +          "Its path does not hold extra, so any value given is not sent.",
 +        );
-+        // Parentheses in a literal segment are not a regex group: the extra parameter is only described.
 +        expect(
 +          collect(toolsResponse.body).find(
 +            (entry) => String(entry.name).endsWith(".literalParentheses") && "inputSchema" in entry,
 +          ),
 +          report,
 +        ).toBeDefined();
-+        // `:jobId` is a placeholder OpenAPI never fills, so the request would go to a literal `:jobId`.
 +        const colon = yield* leftOut("jobs.colonPlaceholder");
 +        expect(colon.code).toBe("operation_path");
 +        expect(colon.message).toContain("declares jobId in a form that is never filled");
 +        for (const name of ["files.starPlaceholder", "tags.patternSegment"])
 +          expect((yield* leftOut(name)).message).toContain("in a form that is never filled");
 +
-+        // A placeholder written after `?` in the path is filled, so it is not an unused parameter.
 +        expect(listed("search.searchWithQueryTemplate"), report).toBeDefined();
 +
-+        // A placeholder in a #fragment is dropped with the fragment, so its parameter counts as not held.
 +        expect(listed("note.fragmentTemplate"), report).toBeDefined();
 +        expect(String(listed("note.fragmentTemplate")?.description ?? "")).toContain(
 +          "Its path does not hold id, so any value given is not sent.",
@@ -485,7 +476,6 @@ index 000000000..bdcf65da9
 +
 +        expect(inputFields("postRequired.requiredBodyPost"), report).toContain("body");
 +
-+        // A template cut at `?` leaves a stray brace; it is named at import instead of sending `{id?}`.
 +        expect((yield* leftOut("users.malformedUser")).code).toBe("operation_path");
 +
 +        const optionalCall = yield* api.request(actors.owner, "POST", `${path}/tools/call`, {
@@ -497,7 +487,6 @@ index 000000000..bdcf65da9
 +        const optional = yield* body(Schema.Struct({ body: Schema.String }), optionalCall);
 +        expect(optional.body).toBe("none");
 +
-+        // The placeholder written after `?` reaches the request, so declaring it as a path parameter is not a mistake.
 +        const searchCall = yield* api.request(actors.owner, "POST", `${path}/tools/call`, {
 +          tool: "search.searchWithQueryTemplate",
 +          kind: "query",
@@ -531,17 +520,16 @@ index 000000000..bdcf65da9
 +  );
 +});
 diff --git a/packages/apps/src/implementation/openapi-compile.ts b/packages/apps/src/implementation/openapi-compile.ts
-index a628b5b0f..a9ea590f9 100644
+index e140fac71..45d42de9a 100644
 --- a/packages/apps/src/implementation/openapi-compile.ts
 +++ b/packages/apps/src/implementation/openapi-compile.ts
-@@ -354,6 +354,29 @@ const fixedMethods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
+@@ -352,6 +352,27 @@ const fixedMethods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
  const fixedMethods32 = [...fixedMethods, "QUERY"] as const;
  const isImportedMethod = Schema.is(OpenapiOperation.fields.method);
  
 +const placeholdersOf = (text: string) =>
 +  [...text.matchAll(/\{([^{}]+)\}/g)].map(([, name]) => name);
 +
-+/** Declared names a route writes in a form OpenAPI never fills: `:name` or `*name` as a segment, or beside a regex group like `(\d+)`. */
 +const unfilledForms = (route: string, names: readonly string[]) => {
 +  const segments = route.split("/");
 +  const regexGroup = segments.some((segment) => {
@@ -554,7 +542,6 @@ index a628b5b0f..a9ea590f9 100644
 +  );
 +};
 +
-+/** The route part of a path: before any ?query and without a #fragment. */
 +const pathRoute = (path: string) => {
 +  const [declared = path] = path.split("#");
 +  const at = declared.indexOf("?");
@@ -564,19 +551,16 @@ index a628b5b0f..a9ea590f9 100644
  /**
   * A path prefix inserted between every operation's server and its path, such as
   * `/projects/{project}`. Each `{name}` becomes a required string path parameter of every
-@@ -701,6 +724,39 @@ export const compileOpenApiDocument = (
+@@ -686,6 +707,36 @@ export const compileOpenApiDocument = (
                  at: undefined,
                });
            }
-+          // A brace left once placeholders are taken out, as in `/users/{id?}` cut at its `?`, cannot be filled.
 +          if (/[{}]/.test(pathRoute(path).replace(/\{[^{}]+\}/g, "")))
 +            fail(
 +              "operation_path",
 +              `The path ${JSON.stringify(path)} has an unclosed or stray brace, so no request can fill it.`,
 +            );
-+          // Every route placeholder must be filled by a declared path parameter.
 +          const placeholders = placeholdersOf(pathRoute(path));
-+          // A placeholder after `?` is still filled by the request builder, but one in a #fragment is dropped.
 +          const [beforeFragment = path] = path.split("#");
 +          const usedPathParameters = new Set([...prefix, ...placeholdersOf(beforeFragment)]);
 +          const unusedPathParameters = [...parameters.keys()]
@@ -601,10 +585,10 @@ index a628b5b0f..a9ea590f9 100644
 +              "operation_path",
 +              `The path ${JSON.stringify(path)} declares ${unfilled.join(", ")} in a form that is never filled (:name, *name or a pattern such as (\\d+)). Write {name}.`,
 +            );
-           // Parameter schemas stay in the API dialect until the input schema is composed.
            const groups = new Map<
              string,
-@@ -741,7 +797,7 @@ export const compileOpenApiDocument = (
+             { properties: Record<string, (api: ApiSchema) => Json>; required: string[] }
+@@ -724,7 +775,7 @@ export const compileOpenApiDocument = (
            const bodyVariants: Array<(api: ApiSchema) => JsonObject> = [];
            let retainedBody: GeneratedOperation["request"]["requestBody"];
            const bodyAt = declaredAt(document, resolved.requestBody, `${at}/requestBody`);
@@ -613,12 +597,10 @@ index a628b5b0f..a9ea590f9 100644
              operation.requestBody === undefined
                ? undefined
                : decodeDefinition(
-@@ -750,6 +806,22 @@ export const compileOpenApiDocument = (
+@@ -733,6 +784,20 @@ export const compileOpenApiDocument = (
                    bodyAt,
                    "request body",
                  );
-+          // GET and HEAD cannot carry a body. A required body is impossible; an optional body is
-+          // left out of the tool's input so the operation remains callable without it.
 +          let bodyDroppedForGetHead = false;
 +          if (
 +            request !== undefined &&
@@ -633,10 +615,10 @@ index a628b5b0f..a9ea590f9 100644
 +            request = undefined;
 +            bodyDroppedForGetHead = true;
 +          }
-           // A request body that declares no media types has nothing to send, as Executor v1 read it.
            if (request !== undefined && Object.keys(request.content).length > 0) {
              const rawContent = record(document.resolve(record(resolved.requestBody)).content);
-@@ -881,7 +953,18 @@ export const compileOpenApiDocument = (
+             const retainedContent: Record<string, (typeof RequestBody.Type.content)[string]> = {};
+@@ -854,7 +919,17 @@ export const compileOpenApiDocument = (
                ...(operation.operationId === undefined
                  ? {}
                  : { operationId: operation.operationId }),
@@ -646,7 +628,6 @@ index a628b5b0f..a9ea590f9 100644
 +                ...(bodyDroppedForGetHead
 +                  ? ["Its optional request body is left out: GET and HEAD cannot carry a body."]
 +                  : []),
-+                // Any other declared path parameter the path does not hold is ignored, and the description says so.
 +                ...(unusedPathParameters.length > 0
 +                  ? [
 +                      `Its path does not hold ${unusedPathParameters.join(", ")}, so any value given is not sent.`,

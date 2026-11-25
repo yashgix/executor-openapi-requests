@@ -2,42 +2,46 @@
   "checkedAgainst": {
     "repo": "UsefulSoftwareCo/executor",
     "branch": "v2",
-    "commit": "45e39ee12",
-    "date": "2026-11-24"
+    "commit": "7cabe226e",
+    "date": "2026-11-25"
   },
   "pr2": {
     "title": "Send OpenAPI and ctx.fetch queries exactly as built",
     "url": "https://github.com/UsefulSoftwareCo/executor/pull/2590",
     "number": 2590,
-    "commit": "d5733f56b",
+    "commit": "580514465",
     "status": "open on 24 Nov 2026, no checks, comments or reviews yet",
-    "files": 6,
-    "added": 400,
+    "added": 376,
     "removed": 5,
-    "checked": "2026-11-24"
+    "checked": "2026-11-24",
+    "originalCommit": "d5733f56b",
+    "files": 6
   },
   "pr1": {
     "title": "Report unsendable OpenAPI operations during import",
-    "commit": "2c8de9c7e",
+    "commit": "af5d3a9bb",
     "status": "open on 24 Nov 2026, no checks, comments or reviews yet",
     "files": 4,
     "url": "https://github.com/UsefulSoftwareCo/executor/pull/2595",
     "number": 2595,
-    "sameTreeAs": "534287040"
+    "sameTreeAs": "534287040",
+    "originalCommit": "2c8de9c7e",
+    "added": 558,
+    "removed": 2
   },
   "scenarios": {
     "importDiagnostics": {
-      "commit": "534287040",
+      "commit": "af5d3a9bb",
       "result": "pass",
       "realUpstreamControl": "fails at the first refused operation"
     },
     "queryStyles": {
-      "commit": "d5733f56b",
+      "commit": "580514465",
       "result": "pass",
       "realUpstreamControl": "fails on tags=red%2Cblue"
     },
     "appFetchQuery": {
-      "commit": "d5733f56b",
+      "commit": "580514465",
       "result": "pass",
       "earlierFetchCodeControl": "fails on the bare ?"
     }
@@ -87,24 +91,45 @@
     "No live provider was called. Bytes are verified, provider acceptance is not."
   ],
   "verificationByCommit": {
-    "pr2": {
-      "commit": "d5733f56b",
-      "scenarios": "final",
-      "bunRunCheck": "final, 17 of 17",
-      "releaseNoteAndDescriptionCheck": "final"
+    "current": {
+      "pr2": "580514465",
+      "pr1": "af5d3a9bb",
+      "base": "7cabe226e"
     },
-    "pr1": {
-      "commit": "2c8de9c7e",
-      "tree": "same as 534287040",
-      "scenarios": "final tree",
-      "formatLintTypecheck": "final tree",
-      "gate": "not run alone; run on both changes together (final import code with the query change)",
-      "releaseNoteAndDescriptionCheck": "earlier revision, same four files"
+    "rebasedChecks": "scenarios and controls, format, lint, typecheck, e2e:check, bun run check (18 of 18), singly and together",
+    "originalCommits": {
+      "pr2": "d5733f56b",
+      "pr1": "2c8de9c7e",
+      "base": "45e39ee12",
+      "checksTiedToThem": [
+        "regression gate (both together)",
+        "68,090-input sweep (both together)",
+        "release-note and description checks (query commit, earlier import revision)"
+      ]
     },
-    "sweep": "both changes together, earlier revision of the import change (c8cf6a59f), before the regex-group rule was narrowed",
     "notRun": [
       "apps-version",
       "pr:check as a whole"
+    ]
+  },
+  "rebase": {
+    "date": "2026-11-25",
+    "onto": "7cabe226e",
+    "originalBase": "45e39ee12",
+    "reason": "upstream v2 moved 18 commits and both PRs conflicted with a comment-removing export commit",
+    "changes": [
+      "two small conflict resolutions where upstream deleted comment lines next to our code",
+      "removal of the prose comments our commits added, forbidden by upstream's new executor/no-comments lint rule"
+    ],
+    "ranAgainOnRebased": [
+      "end-to-end scenarios and controls",
+      "format, lint, typecheck, e2e:check, bun run check (18 of 18)"
+    ],
+    "tiedToOriginalCommits": [
+      "regression gate",
+      "68,090-input sweep",
+      "9-spec count",
+      "release-note and description checks"
     ]
   }
 }

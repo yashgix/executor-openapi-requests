@@ -21,7 +21,7 @@ Executor turns OpenAPI specs into tools an agent can call. Checking what those t
 
 ## Contents
 - `docs/index.html`: the write-up as one page, with two small demos, diagrams, the evidence table and the reproduction steps. It has an Overview tab and a Technical details tab, and follows the system light or dark theme.
-- `patches/`: `pr2-query-as-sent.patch` (query change) and `pr1-import-diagnostics.patch` (import change), both against `v2` `45e39ee12`.
+- `patches/`: `pr2-query-as-sent.patch` (query change) and `pr1-import-diagnostics.patch` (import change), both against `v2` `7cabe226e`. `patches/original-45e39ee12/` has the originals as first submitted, which the benchmark ran on.
 - `tests/`: the three end-to-end scenarios the patches add, and `rules-port.test.mjs`, which checks the page's import rules against recorded compiler output.
 - `docs/links.json`: the PR links the page shows. Both PR links are set.
 - `reproduce/`: the offline measurement harness and a before and after demo.
@@ -29,12 +29,12 @@ Executor turns OpenAPI specs into tools an agent can call. Checking what those t
 - `screenshots/`: the page at desktop and mobile width, in light and dark.
 
 ## Reproduce
-`PORTFOLIO` is the folder that holds this README and `patches/`. `EXECUTOR` is a fresh clone of [UsefulSoftwareCo/executor](https://github.com/UsefulSoftwareCo/executor). Both patches are against `v2` at `45e39ee12`.
+`PORTFOLIO` is the folder that holds this README and `patches/`. `EXECUTOR` is a fresh clone of [UsefulSoftwareCo/executor](https://github.com/UsefulSoftwareCo/executor). Both patches are against `v2` at `7cabe226e`.
 ```
 export PORTFOLIO="$PWD"
 export EXECUTOR="$HOME/executor"
 git clone https://github.com/UsefulSoftwareCo/executor "$EXECUTOR"
-cd "$EXECUTOR" && git checkout 45e39ee12
+cd "$EXECUTOR" && git checkout 7cabe226e
 git am --3way "$PORTFOLIO/patches/pr2-query-as-sent.patch" "$PORTFOLIO/patches/pr1-import-diagnostics.patch"
 bun install
 bun run e2e:self-host --test-name "OpenAPI import reports a misnamed path parameter"
@@ -43,16 +43,17 @@ cd "$PORTFOLIO" && node --test tests/rules-port.test.mjs
 `git am` needs `user.name` and `user.email` set. The scenarios need Docker. `reproduce/README.md` has the other scenario commands, the control runs and the offline harness.
 
 ## Test results
-Which checks ran on which commit:
+Both changes were rebased on 25 Nov 2026 onto `v2` `7cabe226e`: `580514465` (query change, PR #2590) and `af5d3a9bb` (import change, PR #2595). The code is the same as the originals (`d5733f56b` and `2c8de9c7e`, base `45e39ee12`) apart from two small conflict resolutions and the removal of prose comments, which upstream's new lint rule forbids.
 
-| Check | Query change, final commit `d5733f56b` | Import change, final tree (same tree as `534287040`) |
-|---|---|---|
-| Scenarios pass, and fail on real upstream | yes | yes |
-| Format, lint, typecheck, `e2e:check` | `bun run check`, 17 of 17 | changed files, 9 projects, `e2e:check` |
-| Regression gate, 18 apps, 4,792 operations | not run alone | not run alone. Run on both changes together, with the final import code and the query change: nothing worse |
-| Release-note check, `e2e:check-description` | yes | earlier revision, same four files |
+| Check | Ran on |
+|---|---|
+| Scenarios pass, and fail on current upstream | the rebased commits, singly and together |
+| Format, lint, typecheck, `e2e:check`, `bun run check` (18 of 18) | the rebased commits, singly and together |
+| Regression gate, 18 apps, 4,792 operations | the original commits, both together. Not run for either change alone and not rerun after the rebase |
+| Sweep of 68,090 inputs, and the 9-spec count | the original commits, both together, on an earlier revision of the import change. Not rerun |
+| Release-note check, `e2e:check-description` | the original query commit, and an earlier revision of the import change. Not rerun |
 
-The 68,090-input sweep ran on both changes together, on an earlier revision of the import change that differs only in a regex-group rule narrowed afterwards. `apps-version` and `pr:check` as a whole were not run, because `v2` and `main` share no history. The scenarios ran once, in a container.
+`apps-version` and `pr:check` as a whole were not run, because `v2` and `main` share no history. The scenarios ran once per tree, in a container.
 
 ## Author
 Yash Gupta · [GitHub](https://github.com/yashgix) · [LinkedIn](https://www.linkedin.com/in/yash-guptaix/)

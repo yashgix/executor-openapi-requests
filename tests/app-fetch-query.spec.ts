@@ -1,8 +1,3 @@
-/**
- * The `fetch` a tool receives (`ctx.fetch`, the invocation's correlated fetch) goes out through Executor's
- * outbound network. Its query string must arrive exactly as written; the runtime must not re-encode it as
- * form fields.
- */
 import { expect, layer } from "@effect/vitest";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { Effect, Layer, Schema } from "effect";
@@ -40,10 +35,6 @@ const cases = [
   { name: "fragment", path: "/query?a=1#frag", expected: "?a=1" },
 ];
 
-/**
- * App source in the authored-template style: a tiny public app whose tool fetches the loopback
- * path it is given and returns the query string the server saw.
- */
 const source = (origin: string) => `import {
   decodeJson, defineApp, mutation, object, query, router, string,
 } from "apps";

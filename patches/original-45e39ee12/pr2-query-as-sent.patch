@@ -1,0 +1,504 @@
+From d5733f56becb52b2a3ef873854f7326495f87753 Mon Sep 17 00:00:00 2001
+From: yashgix <125082291+yashgix@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 14:39:16 -0500
+Subject: [PATCH] Send OpenAPI and ctx.fetch queries exactly as built
+
+The invocation fetch read each query into parameters and sent it again form-encoded, which escaped list commas, slashes and colons and turned percent-encoded spaces into plus signs. The request now keeps its query as written, without its fragment. The OpenAPI builder escapes only what a URI query cannot hold and refuses a reserved value containing a number sign.
+
+Release-note: Fix: OpenAPI tools and app requests now send query strings exactly as built, so comma separated lists and encoded spaces reach the API unchanged.
+---
+ .changeset/openapi-query-as-sent.md           |   8 +
+ e2e/test-plan.ts                              |  20 ++
+ e2e/tests/app-fetch-query.spec.ts             | 164 +++++++++++++++++
+ e2e/tests/openapi-query-styles.spec.ts        | 172 ++++++++++++++++++
+ .../src/implementation/openapi-request.ts     |  23 ++-
+ packages/telemetry/src/context.ts             |  18 +-
+ 6 files changed, 400 insertions(+), 5 deletions(-)
+ create mode 100644 .changeset/openapi-query-as-sent.md
+ create mode 100644 e2e/tests/app-fetch-query.spec.ts
+ create mode 100644 e2e/tests/openapi-query-styles.spec.ts
+
+diff --git a/.changeset/openapi-query-as-sent.md b/.changeset/openapi-query-as-sent.md
+new file mode 100644
+index 000000000..13a858a70
+--- /dev/null
++++ b/.changeset/openapi-query-as-sent.md
+@@ -0,0 +1,8 @@
++---
++"apps": patch
++"@executor-js/telemetry": patch
++---
++
++OpenAPI tools and the fetch a tool receives now send a query string exactly as built. Commas in
++unexploded lists, %20 spaces, slashes and colons are no longer re-encoded as form fields. A
++reserved query value containing # is refused, because it would cut the query short.
+diff --git a/e2e/test-plan.ts b/e2e/test-plan.ts
+index c903c8d7f..512868512 100644
+--- a/e2e/test-plan.ts
++++ b/e2e/test-plan.ts
+@@ -3212,6 +3212,16 @@ export const scenarios = plan({
+       local: na("Exercises the hosted import and account connection APIs."),
+     },
+   },
++  openapiQueryStyles: {
++    fixtures: "actors",
++    file: "openapi-query-styles.spec.ts",
++    title: "Imported OpenAPI query parameters reach the upstream as OpenAPI serializes each style",
++    targets: {
++      "self-host": scheduled,
++      cloud: na("Uses a loopback upstream to exercise the shared Worker OpenAPI transport."),
++      local: na("Exercises the hosted import and account connection APIs."),
++    },
++  },
+   concurrentOutbound: {
+     fixtures: "actors",
+     file: "concurrent-outbound.spec.ts",
+@@ -3251,6 +3261,16 @@ export const scenarios = plan({
+       local: na("Local lets app code reach private addresses by design."),
+     },
+   },
++  appFetchQuery: {
++    fixtures: "actors",
++    file: "app-fetch-query.spec.ts",
++    title: "An app's fetch sends its query to the upstream exactly as written",
++    targets: {
++      "self-host": scheduled,
++      cloud: na("Uses a loopback upstream to exercise the shared outbound network."),
++      local: na("Exercises the hosted app deploy, account check and tool call APIs."),
++    },
++  },
+   appFetchUserAgent: {
+     fixtures: "actors",
+     file: "app-fetch-user-agent.spec.ts",
+diff --git a/e2e/tests/app-fetch-query.spec.ts b/e2e/tests/app-fetch-query.spec.ts
+new file mode 100644
+index 000000000..4e543bf21
+--- /dev/null
++++ b/e2e/tests/app-fetch-query.spec.ts
+@@ -0,0 +1,164 @@
++/**
++ * The `fetch` a tool receives (`ctx.fetch`, the invocation's correlated fetch) goes out through Executor's
++ * outbound network. Its query string must arrive exactly as written; the runtime must not re-encode it as
++ * form fields.
++ */
++import { expect, layer } from "@effect/vitest";
++import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
++import { Effect, Layer, Schema } from "effect";
++import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http";
++import { createServer } from "node:http";
++import { Actors } from "../support/actors.ts";
++import { Api, body } from "../support/api.ts";
++import { appsManifest } from "../support/apps-release.ts";
++import { HostedLive, withHostedCase } from "../support/case.ts";
++import { App } from "../support/contracts.ts";
++import { Evidence } from "../support/evidence.ts";
++import { scenarios } from "../test-plan.ts";
++
++const Upstream = Schema.Struct({
++  search: Schema.String,
++});
++const Echo = Schema.Struct({
++  search: Schema.String,
++  body: Schema.String,
++});
++
++const searchOf = (url: string) => {
++  const question = url.indexOf("?");
++  return question === -1 ? "" : url.slice(question);
++};
++
++const cases = [
++  { name: "plain", path: "/query", expected: "" },
++  { name: "comma", path: "/query?tags=red,blue", expected: "?tags=red,blue" },
++  { name: "space", path: "/query?spaces=a%20b", expected: "?spaces=a%20b" },
++  { name: "slash-colon", path: "/query?path=a/b:c", expected: "?path=a/b:c" },
++  { name: "encoded-equals", path: "/query?q=a%26b%3Dc", expected: "?q=a%26b%3Dc" },
++  { name: "empty", path: "/query?empty=", expected: "?empty=" },
++  { name: "bare-question-mark", path: "/query?", expected: "?" },
++  { name: "fragment", path: "/query?a=1#frag", expected: "?a=1" },
++];
++
++/**
++ * App source in the authored-template style: a tiny public app whose tool fetches the loopback
++ * path it is given and returns the query string the server saw.
++ */
++const source = (origin: string) => `import {
++  decodeJson, defineApp, mutation, object, query, router, string,
++} from "apps";
++const Upstream = object({ search: string() });
++const Echo = object({ search: string(), body: string() });
++export default defineApp({}, {
++  tools: router({
++    fetchQuery: query({ input: object({ path: string() }) }, async (ctx, { path }) => {
++      const response = await ctx.fetch(${JSON.stringify(origin)} + path);
++      return decodeJson(response, Upstream);
++    }),
++    sendBody: mutation(
++      { input: object({ path: string(), mode: string() }) },
++      async (ctx, { path, mode }) => {
++        const response = mode === "stream"
++          ? await ctx.fetch(${JSON.stringify(origin)} + path, {
++              method: "POST",
++              duplex: "half",
++              body: new ReadableStream({
++                start(controller) {
++                  controller.enqueue(new TextEncoder().encode("first,"));
++                  controller.enqueue(new TextEncoder().encode("second"));
++                  controller.close();
++                },
++              }),
++            })
++          : await ctx.fetch(${JSON.stringify(origin)} + path, {
++              method: "POST",
++              keepalive: true,
++              body: "first,second",
++            });
++        return decodeJson(response, Echo);
++      },
++    ),
++  }),
++});`;
++
++layer(HostedLive, { excludeTestServices: true })("App fetch query", (it) => {
++  it.effect(scenarios.appFetchQuery.title, (context) =>
++    withHostedCase(
++      context,
++      Effect.gen(function* () {
++        const api = yield* Api,
++          actors = yield* Actors,
++          evidence = yield* Evidence;
++        const routes = Layer.mergeAll(
++          HttpRouter.add(
++            "GET",
++            "/query",
++            Effect.gen(function* () {
++              const request = yield* HttpServerRequest.HttpServerRequest;
++              return yield* HttpServerResponse.json({ search: searchOf(request.originalUrl) });
++            }),
++          ),
++          HttpRouter.add(
++            "POST",
++            "/echo",
++            Effect.gen(function* () {
++              const request = yield* HttpServerRequest.HttpServerRequest;
++              const text = yield* request.text;
++              return yield* HttpServerResponse.json({
++                search: searchOf(request.originalUrl),
++                body: text,
++              });
++            }),
++          ),
++        );
++        const services = yield* Layer.build(
++          HttpRouter.serve(routes, { disableLogger: true, disableListenLog: true }).pipe(
++            Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })),
++          ),
++        );
++        const server = yield* HttpServer.HttpServer.pipe(Effect.provideContext(services));
++        if (!("port" in server.address)) return yield* Effect.die("Fixture must listen on TCP");
++        const origin = `http://127.0.0.1:${server.address.port}`;
++
++        const prefix = `/api/organizations/${actors.organization.id}`;
++        const deployed = yield* api.request(actors.owner, "POST", `${prefix}/apps/deploy`, {
++          name: "App fetch query proof",
++          files: [{ path: "index.ts", content: source(origin) }, appsManifest],
++        });
++        expect(deployed.status, JSON.stringify(deployed.body)).toBe(200);
++        const app = yield* body(App, deployed);
++        const path = `${prefix}/apps/${app.id}`;
++        yield* Effect.addFinalizer(() =>
++          Effect.gen(function* () {
++            yield* api.request(actors.owner, "DELETE", path);
++          }).pipe(Effect.orDie),
++        );
++
++        for (const entry of cases) {
++          const called = yield* api.request(actors.owner, "POST", `${path}/tools/call`, {
++            tool: "fetchQuery",
++            kind: "query",
++            input: { path: entry.path },
++          });
++          yield* evidence.json(`${entry.name}.json`, called);
++          expect(called.status, JSON.stringify(called.body)).toBe(200);
++          expect(yield* body(Upstream, called)).toEqual({ search: entry.expected });
++        }
++
++        for (const mode of ["keepalive", "stream"] as const) {
++          const called = yield* api.request(actors.owner, "POST", `${path}/tools/call`, {
++            tool: "sendBody",
++            kind: "mutation",
++            input: { path: "/echo?tags=red,blue&spaces=a%20b", mode },
++          });
++          yield* evidence.json(`body-${mode}.json`, called);
++          expect(called.status, JSON.stringify(called.body)).toBe(200);
++          expect(yield* body(Echo, called)).toEqual({
++            search: "?tags=red,blue&spaces=a%20b",
++            body: "first,second",
++          });
++        }
++      }),
++    ),
++  );
++});
+diff --git a/e2e/tests/openapi-query-styles.spec.ts b/e2e/tests/openapi-query-styles.spec.ts
+new file mode 100644
+index 000000000..82f2162bc
+--- /dev/null
++++ b/e2e/tests/openapi-query-styles.spec.ts
+@@ -0,0 +1,172 @@
++/** Query parameter styles reach the upstream as OpenAPI serializes them, through the real Worker. */
++import { expect, layer } from "@effect/vitest";
++import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
++import { Effect, Layer, Schema } from "effect";
++import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http";
++import { createServer } from "node:http";
++import { openapiAppFiles } from "../support/authored-templates.ts";
++import { scenarios } from "../test-plan.ts";
++import { Actors } from "../support/actors.ts";
++import { Api, body } from "../support/api.ts";
++import { HostedLive, withHostedCase } from "../support/case.ts";
++import { App, Resource } from "../support/contracts.ts";
++import { Evidence } from "../support/evidence.ts";
++import { connectionsPath } from "../support/app-accounts.ts";
++
++const list = { type: "array", items: { type: "string" } };
++const document = {
++  openapi: "3.1.0",
++  info: { title: "Query styles fixture", version: "1" },
++  components: { securitySchemes: { bearer: { type: "http", scheme: "bearer" } } },
++  security: [{ bearer: [] }],
++  paths: {
++    "/items": {
++      get: {
++        operationId: "listItems",
++        parameters: [
++          { name: "tags", in: "query", style: "form", explode: false, schema: list },
++          { name: "ids", in: "query", style: "form", explode: true, schema: list },
++          { name: "pipes", in: "query", style: "pipeDelimited", explode: false, schema: list },
++          { name: "spaces", in: "query", style: "spaceDelimited", explode: false, schema: list },
++          {
++            name: "filter",
++            in: "query",
++            style: "deepObject",
++            explode: true,
++            schema: {
++              type: "object",
++              properties: { status: { type: "string" }, owner: { type: "string" } },
++            },
++          },
++          {
++            name: "rfilter",
++            in: "query",
++            style: "deepObject",
++            explode: true,
++            allowReserved: true,
++            schema: { type: "object", properties: { status: { type: "string" } } },
++          },
++          { name: "q", in: "query", schema: { type: "string" } },
++          { name: "path", in: "query", allowReserved: true, schema: { type: "string" } },
++        ],
++        responses: {
++          "200": {
++            description: "The query string as the upstream received it",
++            content: { "application/json": { schema: { type: "object" } } },
++          },
++        },
++      },
++    },
++  },
++};
++
++// The query string OpenAPI 3.2 gives for each input (URL Percent-Encoding and Style Examples).
++const cases = [
++  [{ tags: ["red", "blue"] }, "tags=red,blue"],
++  [{ tags: ["red,blue", "green"] }, "tags=red%2Cblue,green"],
++  [{ ids: ["a", "b"] }, "ids=a&ids=b"],
++  [{ pipes: ["a", "b"] }, "pipes=a%7Cb"],
++  [{ spaces: ["a", "b"] }, "spaces=a%20b"],
++  [{ filter: { status: "open", owner: "me" } }, "filter%5Bstatus%5D=open&filter%5Bowner%5D=me"],
++  [{ q: "two words" }, "q=two%20words"],
++  [{ q: "a&b=c/d?e#f+g" }, "q=a%26b%3Dc%2Fd%3Fe%23f%2Bg"],
++  [{ path: "a/b:c" }, "path=a/b:c"],
++  [{ rfilter: { status: "a/b" } }, "rfilter%5Bstatus%5D=a/b"],
++] as const;
++
++layer(HostedLive, { excludeTestServices: true })("OpenAPI query styles", (it) => {
++  it.effect(scenarios.openapiQueryStyles.title, (context) =>
++    withHostedCase(
++      context,
++      Effect.gen(function* () {
++        const api = yield* Api,
++          actors = yield* Actors,
++          evidence = yield* Evidence;
++        let requests = 0;
++        const routes = Layer.mergeAll(
++          HttpRouter.add("GET", "/openapi.json", HttpServerResponse.json(document)),
++          HttpRouter.add(
++            "GET",
++            "/items",
++            Effect.gen(function* () {
++              const request = yield* HttpServerRequest.HttpServerRequest;
++              requests++;
++              if (request.headers.authorization !== "Bearer synthetic-query-key")
++                return HttpServerResponse.empty({ status: 401 });
++              return yield* HttpServerResponse.json({
++                query: request.originalUrl.split("?")[1] ?? "",
++              });
++            }),
++          ),
++        );
++        const services = yield* Layer.build(
++          HttpRouter.serve(routes, { disableLogger: true, disableListenLog: true }).pipe(
++            Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })),
++          ),
++        );
++        const server = yield* HttpServer.HttpServer.pipe(Effect.provideContext(services));
++        if (!("port" in server.address)) return yield* Effect.die("Fixture must listen on TCP");
++        const origin = `http://127.0.0.1:${server.address.port}`;
++        const prefix = `/api/organizations/${actors.organization.id}`;
++        const imported = yield* api.request(actors.owner, "POST", `${prefix}/apps/deploy`, {
++          name: "Query styles proof",
++          files: openapiAppFiles("Query styles proof", {
++            url: `${origin}/openapi.json`,
++            allowedOrigin: origin,
++            baseUrl: origin,
++            securitySchemes: { bearer: { type: "http", scheme: "bearer" } },
++            key: "bearer",
++          }),
++        });
++        expect(imported.status, JSON.stringify(imported.body)).toBe(200);
++        const app = yield* body(App, imported);
++        const path = `${prefix}/apps/${app.id}`;
++        let account: string | undefined;
++        yield* Effect.addFinalizer(() =>
++          Effect.gen(function* () {
++            yield* api.request(actors.owner, "DELETE", path);
++            if (account !== undefined)
++              yield* api.request(actors.owner, "DELETE", `${prefix}/accounts/${account}`);
++          }).pipe(Effect.orDie),
++        );
++        const connection = yield* body(
++          Resource,
++          yield* api.request(actors.owner, "POST", connectionsPath(path, "user", "service"), {}),
++        );
++        account = (yield* body(
++          Resource,
++          yield* api.request(
++            actors.owner,
++            "POST",
++            `${prefix}/connections/${connection.id}/submit`,
++            { method: "apiKey", label: "Synthetic key", fields: { token: "synthetic-query-key" } },
++          ),
++        )).id;
++        const received: Array<string> = [];
++        for (const [query] of cases) {
++          const result = yield* api.request(actors.owner, "POST", `${path}/tools/call`, {
++            tool: "items.listItems",
++            kind: "query",
++            input: { accountId: account, input: { query } },
++          });
++          expect(result.status, JSON.stringify(result.body)).toBe(200);
++          received.push((yield* body(Schema.Struct({ query: Schema.String }), result)).query);
++        }
++        yield* evidence.json("received-queries.json", received);
++        expect(received).toEqual(cases.map(([, wire]) => wire));
++        // A raw `#` in an allowReserved value would end the query; the call is refused unsent,
++        // including a trailing `#`, whose fragment is empty.
++        for (const value of ["x#y", "x#", "#"]) {
++          const refused = yield* api.request(actors.owner, "POST", `${path}/tools/call`, {
++            tool: "items.listItems",
++            kind: "query",
++            input: { accountId: account, input: { query: { tags: ["a", "b"], path: value } } },
++          });
++          expect(refused.status, `${value}: ${JSON.stringify(refused.body)}`).toBe(502);
++          expect(JSON.stringify(refused.body)).toContain("could not be encoded");
++        }
++        expect(requests).toBe(cases.length);
++      }),
++    ),
++  );
++});
+diff --git a/packages/apps/src/implementation/openapi-request.ts b/packages/apps/src/implementation/openapi-request.ts
+index 1c9f488f7..35de7d20a 100644
+--- a/packages/apps/src/implementation/openapi-request.ts
++++ b/packages/apps/src/implementation/openapi-request.ts
+@@ -372,6 +372,10 @@ export function createRequest(config: {
+             const pathname = prepared.url.replace(/^[^:]+:\/\/[^/]*/, "").split(/[?#]/)[0] ?? "";
+             if (pathname.split("/").some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment)))
+               throw new Error("This path value would change the request path");
++            // Only an allowReserved query value can carry a raw `#`, which would cut the query short.
++            // The delimiter is checked, not the fragment, which is empty for a trailing `#`.
++            if (prepared.url.includes("#"))
++              throw new Error("A query value contains #, which would end the query");
+             const url = new URL(prepared.url);
+             if (fixedQuery !== "" || querystrings.length > 0)
+               url.search = [fixedQuery, url.search.slice(1), ...querystrings]
+@@ -395,14 +399,25 @@ export function createRequest(config: {
+         });
+         const client = yield* HttpClient.HttpClient;
+         const request = yield* Effect.try({
+-          try: () =>
+-            HttpClientRequest.fromWeb(
+-              new Request(prepared.url, {
++          try: () => {
++            // A URL with a query would be re-read as form fields and re-encoded, escaping the
++            // commas of unexploded lists and turning %20 into +. The query is sent as built, with
++            // the characters a URI query cannot hold, such as `|` delimiters, deepObject brackets and
++            // a `%` that starts no escape, escaped.
++            const url = new URL(prepared.url);
++            const query = url.search.replace(
++              /%(?![0-9A-Fa-f]{2})|[[\]{}|^`\\]/g,
++              (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
++            );
++            url.search = "";
++            return HttpClientRequest.fromWeb(
++              new Request(url, {
+                 method: prepared.method,
+                 headers: prepared.headers,
+                 ...(prepared.body === undefined ? {} : { body: prepared.body }),
+               }),
+-            ),
++            ).pipe(HttpClientRequest.setUrl(url.href + query));
++          },
+           catch: () => new OpenapiError({ reason: "invalid_input", operation }),
+         });
+         const response = yield* HttpClient.withScope(client).execute(request);
+diff --git a/packages/telemetry/src/context.ts b/packages/telemetry/src/context.ts
+index a7ffd02c0..47c7c3d84 100644
+--- a/packages/telemetry/src/context.ts
++++ b/packages/telemetry/src/context.ts
+@@ -49,6 +49,22 @@ export const withRemoteSpan =
+       }),
+     );
+ 
++/**
++ * The request as an Effect request with its query exactly as the caller wrote it. `fromWeb` reads the query
++ * into parameters, which are sent re-encoded as form fields (`%20` as `+`, commas and slashes escaped), so the
++ * parameters are cleared and the URL, without its fragment, is set again as written.
++ */
++const asSent = (request: Request) => {
++  const url = new URL(request.url);
++  url.hash = "";
++  const written = url.href;
++  url.search = "";
++  return HttpClientRequest.fromWeb(request).pipe(
++    HttpClientRequest.setUrl(url),
++    HttpClientRequest.setUrl(written),
++  );
++};
++
+ /** Plain fetch for app authors, correlated with the invocation and cancelled by its owner. */
+ export const invocationFetch = (signal: AbortSignal) =>
+   Effect.gen(function* () {
+@@ -58,7 +74,7 @@ export const invocationFetch = (signal: AbortSignal) =>
+         Effect.gen(function* () {
+           const request = yield* Effect.try(() => new Request(input, init));
+           const client = yield* HttpClient.HttpClient;
+-          const response = yield* client.execute(HttpClientRequest.fromWeb(request)).pipe(
++          const response = yield* client.execute(asSent(request)).pipe(
+             Effect.withSpan(
+               "provider.http.request",
+               ownedBy("upstream", { attributes: { "http.request.method": request.method } }),
+-- 
+2.52.0
+

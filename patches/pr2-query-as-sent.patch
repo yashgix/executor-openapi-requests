@@ -1,4 +1,4 @@
-From d5733f56becb52b2a3ef873854f7326495f87753 Mon Sep 17 00:00:00 2001
+From 580514465047fff53e4a1ed8b0671a26bd9e8de1 Mon Sep 17 00:00:00 2001
 From: yashgix <125082291+yashgix@users.noreply.github.com>
 Date: Sun, 22 Nov 2026 14:39:16 -0500
 Subject: [PATCH] Send OpenAPI and ctx.fetch queries exactly as built
@@ -8,12 +8,12 @@ The invocation fetch read each query into parameters and sent it again form-enco
 Release-note: Fix: OpenAPI tools and app requests now send query strings exactly as built, so comma separated lists and encoded spaces reach the API unchanged.
 ---
  .changeset/openapi-query-as-sent.md           |   8 +
- e2e/test-plan.ts                              |  20 ++
- e2e/tests/app-fetch-query.spec.ts             | 164 +++++++++++++++++
- e2e/tests/openapi-query-styles.spec.ts        | 172 ++++++++++++++++++
- .../src/implementation/openapi-request.ts     |  23 ++-
- packages/telemetry/src/context.ts             |  18 +-
- 6 files changed, 400 insertions(+), 5 deletions(-)
+ e2e/test-plan.ts                              |  20 +++
+ e2e/tests/app-fetch-query.spec.ts             | 155 ++++++++++++++++
+ e2e/tests/openapi-query-styles.spec.ts        | 168 ++++++++++++++++++
+ .../src/implementation/openapi-request.ts     |  17 +-
+ packages/telemetry/src/context.ts             |  13 +-
+ 6 files changed, 376 insertions(+), 5 deletions(-)
  create mode 100644 .changeset/openapi-query-as-sent.md
  create mode 100644 e2e/tests/app-fetch-query.spec.ts
  create mode 100644 e2e/tests/openapi-query-styles.spec.ts
@@ -33,10 +33,10 @@ index 000000000..13a858a70
 +unexploded lists, %20 spaces, slashes and colons are no longer re-encoded as form fields. A
 +reserved query value containing # is refused, because it would cut the query short.
 diff --git a/e2e/test-plan.ts b/e2e/test-plan.ts
-index c903c8d7f..512868512 100644
+index 27a753b49..f12f121cd 100644
 --- a/e2e/test-plan.ts
 +++ b/e2e/test-plan.ts
-@@ -3212,6 +3212,16 @@ export const scenarios = plan({
+@@ -3128,6 +3128,16 @@ export const scenarios = plan({
        local: na("Exercises the hosted import and account connection APIs."),
      },
    },
@@ -53,7 +53,7 @@ index c903c8d7f..512868512 100644
    concurrentOutbound: {
      fixtures: "actors",
      file: "concurrent-outbound.spec.ts",
-@@ -3251,6 +3261,16 @@ export const scenarios = plan({
+@@ -3162,6 +3172,16 @@ export const scenarios = plan({
        local: na("Local lets app code reach private addresses by design."),
      },
    },
@@ -72,15 +72,10 @@ index c903c8d7f..512868512 100644
      file: "app-fetch-user-agent.spec.ts",
 diff --git a/e2e/tests/app-fetch-query.spec.ts b/e2e/tests/app-fetch-query.spec.ts
 new file mode 100644
-index 000000000..4e543bf21
+index 000000000..14e942c53
 --- /dev/null
 +++ b/e2e/tests/app-fetch-query.spec.ts
-@@ -0,0 +1,164 @@
-+/**
-+ * The `fetch` a tool receives (`ctx.fetch`, the invocation's correlated fetch) goes out through Executor's
-+ * outbound network. Its query string must arrive exactly as written; the runtime must not re-encode it as
-+ * form fields.
-+ */
+@@ -0,0 +1,155 @@
 +import { expect, layer } from "@effect/vitest";
 +import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 +import { Effect, Layer, Schema } from "effect";
@@ -118,10 +113,6 @@ index 000000000..4e543bf21
 +  { name: "fragment", path: "/query?a=1#frag", expected: "?a=1" },
 +];
 +
-+/**
-+ * App source in the authored-template style: a tiny public app whose tool fetches the loopback
-+ * path it is given and returns the query string the server saw.
-+ */
 +const source = (origin: string) => `import {
 +  decodeJson, defineApp, mutation, object, query, router, string,
 +} from "apps";
@@ -242,11 +233,10 @@ index 000000000..4e543bf21
 +});
 diff --git a/e2e/tests/openapi-query-styles.spec.ts b/e2e/tests/openapi-query-styles.spec.ts
 new file mode 100644
-index 000000000..82f2162bc
+index 000000000..50693635a
 --- /dev/null
 +++ b/e2e/tests/openapi-query-styles.spec.ts
-@@ -0,0 +1,172 @@
-+/** Query parameter styles reach the upstream as OpenAPI serializes them, through the real Worker. */
+@@ -0,0 +1,168 @@
 +import { expect, layer } from "@effect/vitest";
 +import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 +import { Effect, Layer, Schema } from "effect";
@@ -308,7 +298,6 @@ index 000000000..82f2162bc
 +  },
 +};
 +
-+// The query string OpenAPI 3.2 gives for each input (URL Percent-Encoding and Style Examples).
 +const cases = [
 +  [{ tags: ["red", "blue"] }, "tags=red,blue"],
 +  [{ tags: ["red,blue", "green"] }, "tags=red%2Cblue,green"],
@@ -402,8 +391,6 @@ index 000000000..82f2162bc
 +        }
 +        yield* evidence.json("received-queries.json", received);
 +        expect(received).toEqual(cases.map(([, wire]) => wire));
-+        // A raw `#` in an allowReserved value would end the query; the call is refused unsent,
-+        // including a trailing `#`, whose fragment is empty.
 +        for (const value of ["x#y", "x#", "#"]) {
 +          const refused = yield* api.request(actors.owner, "POST", `${path}/tools/call`, {
 +            tool: "items.listItems",
@@ -419,21 +406,19 @@ index 000000000..82f2162bc
 +  );
 +});
 diff --git a/packages/apps/src/implementation/openapi-request.ts b/packages/apps/src/implementation/openapi-request.ts
-index 1c9f488f7..35de7d20a 100644
+index 9525edb64..77e66a07e 100644
 --- a/packages/apps/src/implementation/openapi-request.ts
 +++ b/packages/apps/src/implementation/openapi-request.ts
-@@ -372,6 +372,10 @@ export function createRequest(config: {
+@@ -360,6 +360,8 @@ export function createRequest(config: {
              const pathname = prepared.url.replace(/^[^:]+:\/\/[^/]*/, "").split(/[?#]/)[0] ?? "";
              if (pathname.split("/").some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment)))
                throw new Error("This path value would change the request path");
-+            // Only an allowReserved query value can carry a raw `#`, which would cut the query short.
-+            // The delimiter is checked, not the fragment, which is empty for a trailing `#`.
 +            if (prepared.url.includes("#"))
 +              throw new Error("A query value contains #, which would end the query");
              const url = new URL(prepared.url);
              if (fixedQuery !== "" || querystrings.length > 0)
                url.search = [fixedQuery, url.search.slice(1), ...querystrings]
-@@ -395,14 +399,25 @@ export function createRequest(config: {
+@@ -382,14 +384,21 @@ export function createRequest(config: {
          });
          const client = yield* HttpClient.HttpClient;
          const request = yield* Effect.try({
@@ -441,10 +426,6 @@ index 1c9f488f7..35de7d20a 100644
 -            HttpClientRequest.fromWeb(
 -              new Request(prepared.url, {
 +          try: () => {
-+            // A URL with a query would be re-read as form fields and re-encoded, escaping the
-+            // commas of unexploded lists and turning %20 into +. The query is sent as built, with
-+            // the characters a URI query cannot hold, such as `|` delimiters, deepObject brackets and
-+            // a `%` that starts no escape, escaped.
 +            const url = new URL(prepared.url);
 +            const query = url.search.replace(
 +              /%(?![0-9A-Fa-f]{2})|[[\]{}|^`\\]/g,
@@ -464,18 +445,13 @@ index 1c9f488f7..35de7d20a 100644
          });
          const response = yield* HttpClient.withScope(client).execute(request);
 diff --git a/packages/telemetry/src/context.ts b/packages/telemetry/src/context.ts
-index a7ffd02c0..47c7c3d84 100644
+index c5c93e4ba..e0c71e1aa 100644
 --- a/packages/telemetry/src/context.ts
 +++ b/packages/telemetry/src/context.ts
-@@ -49,6 +49,22 @@ export const withRemoteSpan =
+@@ -44,6 +44,17 @@ export const withRemoteSpan =
        }),
      );
  
-+/**
-+ * The request as an Effect request with its query exactly as the caller wrote it. `fromWeb` reads the query
-+ * into parameters, which are sent re-encoded as form fields (`%20` as `+`, commas and slashes escaped), so the
-+ * parameters are cleared and the URL, without its fragment, is set again as written.
-+ */
 +const asSent = (request: Request) => {
 +  const url = new URL(request.url);
 +  url.hash = "";
@@ -487,10 +463,10 @@ index a7ffd02c0..47c7c3d84 100644
 +  );
 +};
 +
- /** Plain fetch for app authors, correlated with the invocation and cancelled by its owner. */
  export const invocationFetch = (signal: AbortSignal) =>
    Effect.gen(function* () {
-@@ -58,7 +74,7 @@ export const invocationFetch = (signal: AbortSignal) =>
+     const { context } = yield* captureTelemetry;
+@@ -52,7 +63,7 @@ export const invocationFetch = (signal: AbortSignal) =>
          Effect.gen(function* () {
            const request = yield* Effect.try(() => new Request(input, init));
            const client = yield* HttpClient.HttpClient;

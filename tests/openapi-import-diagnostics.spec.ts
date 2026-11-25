@@ -1,4 +1,3 @@
-/** Import diagnostics: missing path parameters and GET/HEAD bodies are reported or handled. */
 import { expect, layer } from "@effect/vitest";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { Effect, Layer, Schema } from "effect";
@@ -349,8 +348,6 @@ layer(HostedLive, { excludeTestServices: true })("OpenAPI import diagnostics", (
           collect(toolsResponse.body).find(
             (entry) => entry.name === name && "inputSchema" in entry,
           );
-        // The tool's own input fields: the `input` object each account's branch of the schema wraps. A missing
-        // branch fails here, so an absent field is never read from an absent schema.
         const inputFields = (name: string) => {
           const inputs = collect(listed(name)?.inputSchema).flatMap((entry) => {
             const input = (entry.properties as Record<string, unknown> | undefined)?.input;
@@ -365,7 +362,6 @@ layer(HostedLive, { excludeTestServices: true })("OpenAPI import diagnostics", (
             ).toBe(true);
           return fields.flatMap((branch) => Object.keys(branch ?? {}));
         };
-        // A left-out operation is not listed; reading it by name reports why, for that operation alone.
         const leftOut = (name: string) =>
           Effect.gen(function* () {
             const read = yield* api.request(actors.owner, "GET", `${path}/tools/${name}`);
@@ -380,29 +376,24 @@ layer(HostedLive, { excludeTestServices: true })("OpenAPI import diagnostics", (
           "The path uses {report_slug}, but the operation declares no path parameter named report_slug. Declared path parameters the path does not use: report_id.",
         );
 
-        // A declared path parameter the path does not hold is ignored: the tool stays callable and says so.
         expect(listed("items.itemWithExtra"), report).toBeDefined();
         expect(String(listed("items.itemWithExtra")?.description ?? "")).toContain(
           "Its path does not hold extra, so any value given is not sent.",
         );
-        // Parentheses in a literal segment are not a regex group: the extra parameter is only described.
         expect(
           collect(toolsResponse.body).find(
             (entry) => String(entry.name).endsWith(".literalParentheses") && "inputSchema" in entry,
           ),
           report,
         ).toBeDefined();
-        // `:jobId` is a placeholder OpenAPI never fills, so the request would go to a literal `:jobId`.
         const colon = yield* leftOut("jobs.colonPlaceholder");
         expect(colon.code).toBe("operation_path");
         expect(colon.message).toContain("declares jobId in a form that is never filled");
         for (const name of ["files.starPlaceholder", "tags.patternSegment"])
           expect((yield* leftOut(name)).message).toContain("in a form that is never filled");
 
-        // A placeholder written after `?` in the path is filled, so it is not an unused parameter.
         expect(listed("search.searchWithQueryTemplate"), report).toBeDefined();
 
-        // A placeholder in a #fragment is dropped with the fragment, so its parameter counts as not held.
         expect(listed("note.fragmentTemplate"), report).toBeDefined();
         expect(String(listed("note.fragmentTemplate")?.description ?? "")).toContain(
           "Its path does not hold id, so any value given is not sent.",
@@ -426,7 +417,6 @@ layer(HostedLive, { excludeTestServices: true })("OpenAPI import diagnostics", (
 
         expect(inputFields("postRequired.requiredBodyPost"), report).toContain("body");
 
-        // A template cut at `?` leaves a stray brace; it is named at import instead of sending `{id?}`.
         expect((yield* leftOut("users.malformedUser")).code).toBe("operation_path");
 
         const optionalCall = yield* api.request(actors.owner, "POST", `${path}/tools/call`, {
@@ -438,7 +428,6 @@ layer(HostedLive, { excludeTestServices: true })("OpenAPI import diagnostics", (
         const optional = yield* body(Schema.Struct({ body: Schema.String }), optionalCall);
         expect(optional.body).toBe("none");
 
-        // The placeholder written after `?` reaches the request, so declaring it as a path parameter is not a mistake.
         const searchCall = yield* api.request(actors.owner, "POST", `${path}/tools/call`, {
           tool: "search.searchWithQueryTemplate",
           kind: "query",
